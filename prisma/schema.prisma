@@ -1,0 +1,167 @@
+// ===========================================================================
+// Plataforma de tiendas de ropa — modelo de datos.
+//
+// Reglas que sostienen todo lo demás:
+//
+//  1. TODO dato de negocio cuelga de una Store. No existe fila "global" que un
+//     inquilino pueda ver por accidente. Esto incluye colores, tallas y
+//     categorías, que en la versión de tienda única eran tablas compartidas:
+//     dos tiendas distintas nombran y ordenan sus tallas distinto, y una lista
+//     común obligaría a una de las dos a ceder.
+//
+//  2. Cada tabla con `storeId` lleva RLS encima, comparando contra
+//     `current_setting('app.store_id')`. La aplicación se conecta con un rol
+//     sin BYPASSRLS, así que la política se aplica de verdad. Es una red bajo
+//     el filtro explícito por `storeId`, no un reemplazo de él.
+//     Ver src/prisma/prisma.service.ts → `forStore`.
+//
+//  3. El dinero se guarda en enteros de pesos colombianos. El COP no usa
+//     decimales y Float no puede representar dinero: 0.1 + 0.2 no es 0.3, y una
+//     factura no puede depender de eso.
+//
+//  4. Los slugs son únicos POR TIENDA, no globales. `@@unique([storeId, slug])`.
+//     Que dos tiendas tengan un producto "vestido-negro" es lo normal, no un
+//     conflicto.
+//
+// Esta primera migración trae solo identidad e inquilinos. El catálogo, los
+// pedidos y la facturación entran en la fase 2.
+// ===========================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 sacó las URLs de conexión del schema: la de migraciones vive en
+// prisma.config.ts y la de runtime entra por el adapter en prisma.service.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Inquilinos
+// ---------------------------------------------------------------------------
+
+/// Estado comercial de la tienda. Decide si la tienda pública responde.
+enum StoreStatus {
+  /// Período de prueba. Funciona completa.
+  TRIAL
+  /// Al día. Funciona completa.
+  ACTIVE
+  /// Venció el pago pero hay período de gracia: el panel avisa, la tienda sigue.
+  PAST_DUE
+  /// Suspendida: la tienda pública deja de responder y el panel queda en lectura.
+  SUSPENDED
+  @@map("store_status")
+}
+
+/// Un inquilino: la tienda que vende ropa a sus clientas.
+model Store {
+  id   String @id @default(uuid()) @db.Uuid
+  name String
+
+  /// Subdominio bajo el que responde la tienda pública, y su identificador en
+  /// URLs. Único en toda la plataforma porque es un nombre de host.
+  /// El formato lo valida un CHECK en la migración, no solo el DTO: es lo que
+  /// impide que un slug con puntos o mayúsculas llegue a formar un host.
+  slug String @unique
+
+  /// Dominio propio, cuando la tienda contrata el plan que lo incluye.
+  customDomain String? @unique @map("custom_domain")
+
+  status StoreStatus @default(TRIAL)
+
+  /// Fin del período de prueba. Null una vez que la tienda pasa a pago.
+  trialEndsAt DateTime? @map("trial_ends_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members StoreMember[]
+
+  @@map("stores")
+}
+
+// ---------------------------------------------------------------------------
+// Identidad
+// ---------------------------------------------------------------------------
+
+/// Cuenta de acceso al panel.
+///
+/// Una sola tabla para dueñas y personal de cualquier tienda: lo que distingue
+/// a alguien no es estar en otra tabla, sino tener un StoreMember. Así una
+/// misma persona puede administrar dos tiendas con una sola cuenta y el flujo
+/// de login es uno solo.
+///
+/// Las clientas que compran NO tienen cuenta: el pedido se cierra por WhatsApp
+/// y se consulta con un token en el enlace. Meterlas aquí obligaría a un
+/// registro que hoy nadie pide.
+model User {
+  id       String  @id @default(uuid()) @db.Uuid
+  email    String  @unique
+  fullName String? @map("full_name")
+
+  /// Hash argon2id. Nunca se serializa en una respuesta ni se escribe a un log.
+  /// Nullable para dejar abierta la puerta a cuentas invitadas por la dueña que
+  /// todavía no fijaron contraseña.
+  passwordHash String? @map("password_hash")
+
+  /// Freno a la fuerza bruta por cuenta. El límite por IP vive en el throttler;
+  /// esto cubre el caso del atacante que rota IPs contra un mismo correo.
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships     StoreMember[]
+  platformAdmin   PlatformAdmin?
+
+  @@map("users")
+}
+
+/// Qué puede hacer alguien dentro de una tienda.
+enum MemberRole {
+  /// Dueña: todo, incluido facturación y gestión de miembros.
+  OWNER
+  /// Personal: catálogo y pedidos. No toca facturación ni miembros.
+  STAFF
+  @@map("member_role")
+}
+
+/// Vincula una cuenta con una tienda. Es la fuente de verdad de la autorización.
+///
+/// El guard la consulta EN CADA PETICIÓN en vez de confiar en un claim del JWT.
+/// Así, quitarle acceso a alguien surte efecto en la siguiente request y no en
+/// la próxima vez que se vuelva a loguear —que con tokens de 30 días puede ser
+/// nunca.
+model StoreMember {
+  storeId String     @map("store_id") @db.Uuid
+  userId  String     @map("user_id") @db.Uuid
+  role    MemberRole @default(OWNER)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, userId])
+  @@index([userId])
+  @@map("store_members")
+}
+
+/// Administrador de la plataforma: ve todas las tiendas, registra pagos,
+/// suspende y reactiva.
+///
+/// Tabla aparte y no un campo `role` en User a propósito: un booleano en la
+/// tabla de usuarios es un campo que cualquier `update` mal filtrado puede
+/// escribir. Para volverse administrador de la plataforma hay que insertar una
+/// fila en una tabla que ninguna ruta de tienda toca jamás.
+model PlatformAdmin {
+  userId String @id @map("user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("platform_admins")
+}

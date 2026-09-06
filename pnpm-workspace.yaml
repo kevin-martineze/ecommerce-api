@@ -1,0 +1,17 @@
+# Los scripts de instalación están bloqueados por defecto en pnpm 10+: un
+# paquete cualquiera del árbol de dependencias no debería poder ejecutar código
+# en la máquina solo por instalarse. Acá se decide uno por uno.
+#
+#   prisma / @prisma/engines  descargan el motor de consultas nativo
+#   @swc/core                 trae el binario de Rust que usa `nest build`
+#
+# `@scarf/scarf` va en `false`, no omitido: es telemetría y no hace falta ni
+# para construir ni para ejecutar. La diferencia importa porque un paquete
+# simplemente omitido queda como "build ignorado", y eso hace que `pnpm install`
+# termine con código 1 — lo que rompe cualquier script de pnpm que revalide
+# dependencias antes de correr.
+allowBuilds:
+  prisma: true
+  '@prisma/engines': true
+  '@swc/core': true
+  '@scarf/scarf': false

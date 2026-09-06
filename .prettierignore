@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+pnpm-lock.yaml
+# Prisma tiene su propio formateador (`prisma format`); Prettier no entiende el
+# lenguaje del schema ni el SQL que genera migrate.
+prisma/migrations/
+prisma/schema.prisma
