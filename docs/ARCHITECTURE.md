@@ -211,8 +211,10 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
 - [x] **Fase 1 — Scaffold.** Nest sobre Fastify, Prisma, Postgres en Docker,
       configuración validada, filtro de excepciones, Swagger, sondas de salud.
       Identidad e inquilinos en el schema.
-- [ ] **Fase 2 — Schema de dominio.** Catálogo, pedidos y facturación; políticas
-      de RLS y permisos para `tienda_app`.
+- [x] **Fase 2 — Schema de dominio.** Catálogo, pedidos y facturación; CHECK de
+      integridad, triggers que derivan el `store_id` denormalizado, políticas de
+      RLS y permisos para `tienda_app`. Aislamiento verificado contra la base:
+      ver § 9.
 - [ ] **Fase 3 — Auth.** Registro de tienda, login, refresh con rotación,
       guards, `switch-store`.
 - [ ] **Fase 4 — Catálogo del panel.**
@@ -223,3 +225,39 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
 - [ ] **Fase 9 — Plataforma.** Tiendas, pagos manuales, límites de plan.
 - [ ] **Fase 10 — Enganche del frontend.** Cliente tipado en SvelteKit; se
       retiran `supabase-js` y `@supabase/ssr`.
+
+---
+
+## 9. El aislamiento, verificado contra la base
+
+La capa 4 no es una intención: se comprobó ejecutando SQL como el rol
+`tienda_app` contra dos tiendas sembradas, cada una con un producto. El rol
+reporta `rolbypassrls = f`, que es la premisa de todo lo demás.
+
+| #   | Qué se intentó, con el contexto puesto en la tienda A                  | Resultado                                    |
+| --- | ---------------------------------------------------------------------- | -------------------------------------------- |
+| 1   | Contar productos **sin** fijar contexto                                | 0 filas                                      |
+| 2   | Listar productos con contexto en A                                     | solo el de A                                 |
+| 3   | Listar productos con contexto en B                                     | solo el de B                                 |
+| 4   | `update` del producto de B                                             | `UPDATE 0`                                   |
+| 5   | `insert` de un producto marcado como tienda B                          | `new row violates row-level security policy` |
+| 6   | `delete` del producto de B                                             | `DELETE 0`                                   |
+| 7   | Volver a contar sin contexto                                           | 0 filas                                      |
+| 8   | `insert` de una imagen del producto de A, marcada a mano como tienda B | el trigger la reescribe a A                  |
+| 9   | `insert` de una imagen colgando de un producto de B                    | `No existe products con id …`                |
+
+El caso 9 mostró una propiedad que no estaba buscada: el trigger que deriva el
+`store_id` corre bajo el rol de la aplicación, así que su propia búsqueda del
+padre también pasa por RLS. Un padre de otra tienda no es que esté prohibido:
+es que no existe para esa sesión. Las defensas se componen en lugar de
+limitarse a coexistir.
+
+Los casos 4 y 6 merecen una nota: devuelven `0` en vez de un error. Es lo
+correcto para RLS —una fila que no se ve no se puede reportar como existente
+sin filtrar justamente lo que se quiere ocultar— pero significa que el código
+de aplicación **no puede** interpretar "0 filas afectadas" como "ya estaba
+así". Tiene que tratarlo como "no existe o no es mío", y responder 404.
+
+Esta comprobación se hizo a mano una vez. Convertirla en `test/rls.e2e-spec.ts`,
+que además recorra las tablas con columna `store_id` y falle si alguna no tiene
+política, es parte de la fase 3.

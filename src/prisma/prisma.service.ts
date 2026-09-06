@@ -79,17 +79,48 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    *                se pasa aquí un valor crudo del path, del header o del body.
    */
   async forStore<T>(storeId: string, work: (tx: TenantClient) => Promise<T>): Promise<T> {
+    return this.$transaction(async (tx) => {
+      await this.setStoreContext(tx, storeId);
+
+      return work(tx);
+    });
+  }
+
+  /**
+   * Transacción SIN inquilino fijado de entrada.
+   *
+   * Existe para el único flujo que no puede tenerlo desde el principio: crear
+   * una tienda. La fila de `stores` no está bajo RLS —hay que poder resolver
+   * una tienda por su slug antes de saber de qué tienda hablamos— pero todo lo
+   * que cuelga de ella sí lo está. El registro hace entonces, dentro de UNA
+   * sola transacción: inserta la tienda, fija el contexto con
+   * `setStoreContext`, y recién ahí crea ajustes, suscripción y catálogos base.
+   *
+   * Partirlo en dos transacciones dejaría, ante una caída en el medio, una
+   * tienda a medio nacer: existe, responde, y no tiene ni número de WhatsApp.
+   */
+  async withTransaction<T>(work: (tx: TenantClient) => Promise<T>): Promise<T> {
+    return this.$transaction(work);
+  }
+
+  /**
+   * Fija el inquilino dentro de una transacción ya abierta.
+   *
+   * Es público porque `withTransaction` lo necesita desde fuera, pero la vía
+   * normal es `forStore`. Si te encuentras llamando a esto directamente,
+   * comprueba que no estés reimplementando `forStore` con menos garantías.
+   *
+   * @param storeId Identificador YA VERIFICADO por el guard. Nunca un valor
+   *                crudo del path, del header o del body.
+   */
+  async setStoreContext(tx: TenantClient, storeId: string): Promise<void> {
     if (!UUID_PATTERN.test(storeId)) {
       throw new InternalServerErrorException(
         'Se intentó abrir una transacción de tienda con un identificador que no es UUID.',
       );
     }
 
-    return this.$transaction(async (tx) => {
-      await tx.$executeRaw`select set_config('app.store_id', ${storeId}, true)`;
-
-      return work(tx);
-    });
+    await tx.$executeRaw`select set_config('app.store_id', ${storeId}, true)`;
   }
 }
 

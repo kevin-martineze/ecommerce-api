@@ -13,18 +13,22 @@
 //     `current_setting('app.store_id')`. La aplicación se conecta con un rol
 //     sin BYPASSRLS, así que la política se aplica de verdad. Es una red bajo
 //     el filtro explícito por `storeId`, no un reemplazo de él.
-//     Ver src/prisma/prisma.service.ts → `forStore`.
+//     Ver src/prisma/prisma.service.ts, metodo `forStore`.
 //
 //  3. El dinero se guarda en enteros de pesos colombianos. El COP no usa
 //     decimales y Float no puede representar dinero: 0.1 + 0.2 no es 0.3, y una
 //     factura no puede depender de eso.
 //
-//  4. Los slugs son únicos POR TIENDA, no globales. `@@unique([storeId, slug])`.
+//  4. Los slugs son únicos POR TIENDA, no globales: `@@unique([storeId, slug])`.
 //     Que dos tiendas tengan un producto "vestido-negro" es lo normal, no un
-//     conflicto.
+//     conflicto. Lo mismo vale para SKU, código de cupón y número de pedido.
 //
-// Esta primera migración trae solo identidad e inquilinos. El catálogo, los
-// pedidos y la facturación entran en la fase 2.
+//  5. Las tablas que cuelgan de otra (imágenes, variantes, ítems de pedido)
+//     llevan `storeId` DENORMALIZADO además de su padre. Se podría deducir por
+//     la relación, pero entonces cada política de RLS necesitaría un `exists`
+//     anidado: más lento y mucho más fácil de escribir mal. Con la columna
+//     directa, la política es una comparación. Un trigger la mantiene coherente
+//     con el padre, así que no puede desincronizarse.
 // ===========================================================================
 
 generator client {
@@ -51,6 +55,7 @@ enum StoreStatus {
   PAST_DUE
   /// Suspendida: la tienda pública deja de responder y el panel queda en lectura.
   SUSPENDED
+
   @@map("store_status")
 }
 
@@ -73,12 +78,73 @@ model Store {
   /// Fin del período de prueba. Null una vez que la tienda pasa a pago.
   trialEndsAt DateTime? @map("trial_ends_at")
 
+  /// Siguiente número de pedido de ESTA tienda.
+  ///
+  /// La versión anterior usaba una secuencia global de Postgres. Acá no sirve:
+  /// la dueña espera "pedido 1, 2, 3", no "pedido 1043" — y una secuencia
+  /// compartida además filtraría cuántos pedidos llevan las demás tiendas.
+  /// Se incrementa dentro de la transacción que crea el pedido, bajo el mismo
+  /// lock, así que dos pedidos simultáneos no pueden tomar el mismo número.
+  nextOrderNumber Int @default(1) @map("next_order_number")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  members StoreMember[]
+  members         StoreMember[]
+  settings        StoreSettings?
+  subscription    Subscription?
+  payments        Payment[]
+  categories      Category[]
+  colors          Color[]
+  sizes           Size[]
+  products        Product[]
+  productImages   ProductImage[]
+  variants        Variant[]
+  collections     Collection[]
+  collectionItems CollectionProduct[]
+  coupons         Coupon[]
+  shippingZones   ShippingZone[]
+  orders          Order[]
+  orderItems      OrderItem[]
+  restockRequests RestockRequest[]
+  homeHighlights  HomeHighlight[]
 
   @@map("stores")
+}
+
+/// Configuración editable de una tienda. Una fila por tienda.
+///
+/// En la versión anterior era una tabla de fila única (`id boolean primary key
+/// check (id)`), que es el truco clásico para forzar un singleton. Con varias
+/// tiendas el singleton desaparece y la clave primaria pasa a ser la tienda.
+///
+/// El nombre visible NO se duplica acá: vive en `Store.name`. Tenerlo en dos
+/// lugares garantiza que algún día se contradigan.
+model StoreSettings {
+  storeId String @id @map("store_id") @db.Uuid
+
+  /// Número al que se abre el chat para cerrar la venta. No es variable de
+  /// entorno a propósito: la tienda lo cambia desde el panel, sin redespliegue.
+  whatsappPhone String  @map("whatsapp_phone")
+  instagramUrl  String? @map("instagram_url")
+
+  /// Barra de aviso en la cabecera de la tienda. Null la oculta.
+  announcement String?
+
+  /// Desde este subtotal el envío queda en cero. Null desactiva la promoción.
+  freeShippingThreshold Int? @map("free_shipping_threshold")
+
+  /// Portada: o manda una colección, o mandan estos textos.
+  heroTitle        String? @map("hero_title")
+  heroSubtitle     String? @map("hero_subtitle")
+  heroCollectionId String? @map("hero_collection_id") @db.Uuid
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store          Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  heroCollection Collection? @relation(fields: [heroCollectionId], references: [id], onDelete: SetNull)
+
+  @@map("store_settings")
 }
 
 // ---------------------------------------------------------------------------
@@ -113,8 +179,10 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships     StoreMember[]
-  platformAdmin   PlatformAdmin?
+  memberships   StoreMember[]
+  platformAdmin PlatformAdmin?
+  refreshTokens RefreshToken[]
+  payments      Payment[]
 
   @@map("users")
 }
@@ -125,6 +193,7 @@ enum MemberRole {
   OWNER
   /// Personal: catálogo y pedidos. No toca facturación ni miembros.
   STAFF
+
   @@map("member_role")
 }
 
@@ -164,4 +233,568 @@ model PlatformAdmin {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("platform_admins")
+}
+
+/// Refresh token emitido a una sesión, guardado como hash.
+///
+/// Se guarda el HASH y no el token: si alguien se lleva una copia de esta
+/// tabla, no puede usar nada de lo que hay dentro. Es el mismo criterio que se
+/// aplica a las contraseñas, por la misma razón.
+///
+/// `rotatedToId` implementa la detección de reuso: al refrescar, el token viejo
+/// no se borra, se marca apuntando al nuevo. Si alguien vuelve a presentar el
+/// viejo, significa que fue robado, y se revoca la cadena entera.
+model RefreshToken {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// SHA-256 del token entregado al cliente.
+  tokenHash String @unique @map("token_hash")
+
+  /// Tienda activa cuando se emitió. El access token derivado hereda este
+  /// valor; cambiar de tienda emite una cadena nueva.
+  storeId String? @map("store_id") @db.Uuid
+
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  rotatedToId String?   @map("rotated_to_id") @db.Uuid
+
+  /// Para que la dueña pueda reconocer una sesión ajena en la lista.
+  userAgent String? @map("user_agent")
+  ip        String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Facturación
+// ---------------------------------------------------------------------------
+
+/// Plan comercial. Los límites en null significan "sin límite".
+model Plan {
+  /// Identificador legible: `basico`, `pro`. Se usa en la URL y en el panel.
+  code String @id
+
+  name     String
+  priceCop Int    @map("price_cop")
+
+  maxProducts         Int? @map("max_products")
+  maxOrdersPerMonth   Int? @map("max_orders_per_month")
+  maxImagesPerProduct Int? @map("max_images_per_product")
+
+  /// Si el plan habilita dominio propio.
+  customDomain Boolean @default(false) @map("custom_domain")
+
+  active Boolean @default(true)
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+/// Estado de la suscripción de una tienda.
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+
+  @@map("subscription_status")
+}
+
+/// La suscripción de una tienda. Una por tienda.
+///
+/// No hay pasarela todavía: el cobro se registra a mano desde el panel de
+/// plataforma. El modelo ya tiene la forma que necesita una pasarela
+/// —período, estado, renovación— para que enchufarla después sea agregar
+/// campos de referencia externa, no rehacer esto.
+model Subscription {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @unique @map("store_id") @db.Uuid
+
+  planCode String             @map("plan_code")
+  status   SubscriptionStatus @default(TRIALING)
+
+  /// Hasta cuándo está pago. Registrar un pago la extiende.
+  currentPeriodEnd DateTime @map("current_period_end") @db.Date
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  plan  Plan  @relation(fields: [planCode], references: [code])
+
+  @@map("subscriptions")
+}
+
+/// Un pago de mensualidad registrado a mano.
+///
+/// Es un libro de asientos: nunca se edita ni se borra una fila. Corregir un
+/// error es registrar otro asiento, no reescribir la historia.
+model Payment {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  amountCop   Int      @map("amount_cop")
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+
+  /// `nequi`, `transferencia`, `efectivo`. Texto libre: la lista de medios de
+  /// pago en Colombia cambia más rápido que un enum.
+  method    String
+  reference String?
+
+  /// Quién lo registró. Se conserva aunque esa cuenta se borre.
+  recordedById String? @map("recorded_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store      Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo
+// ---------------------------------------------------------------------------
+
+/// Los valores se guardan en minúscula igual que en la versión con Supabase.
+/// Mantener las cadenas idénticas permite migrar los datos existentes con un
+/// INSERT ... SELECT, sin tabla de traducción.
+enum ProductStatus {
+  DRAFT    @map("draft")
+  ACTIVE   @map("active")
+  ARCHIVED @map("archived")
+
+  @@map("product_status")
+}
+
+model Category {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  slug String
+  name String
+
+  parentId  String? @map("parent_id") @db.Uuid
+  sortOrder Int     @default(0) @map("sort_order")
+  active    Boolean @default(true)
+
+  store    Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@unique([storeId, slug])
+  @@index([storeId, sortOrder])
+  @@map("categories")
+}
+
+model Color {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  slug String
+  name String
+
+  /// `#rrggbb`. El formato lo verifica un CHECK en la migración, no solo el DTO.
+  hex String
+
+  sortOrder Int     @default(0) @map("sort_order")
+  active    Boolean @default(true)
+
+  store    Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variants Variant[]
+  images   ProductImage[]
+
+  @@unique([storeId, slug])
+  @@index([storeId, sortOrder])
+  @@map("colors")
+}
+
+model Size {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  label     String
+  sortOrder Int     @default(0) @map("sort_order")
+  active    Boolean @default(true)
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variants Variant[]
+
+  @@unique([storeId, label])
+  @@index([storeId, sortOrder])
+  @@map("sizes")
+}
+
+model Product {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  slug        String
+  name        String
+  description String?
+  material    String?
+  care        String?
+
+  categoryId String? @map("category_id") @db.Uuid
+
+  /// Precio en pesos enteros. Una variante puede pisarlo con `priceOverride`.
+  basePrice Int @map("base_price")
+
+  /// Precio tachado. Solo se pinta si es mayor que `basePrice`.
+  compareAtPrice Int? @map("compare_at_price")
+
+  status   ProductStatus @default(DRAFT)
+  featured Boolean       @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store       Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category    Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  images      ProductImage[]
+  variants    Variant[]
+  collections CollectionProduct[]
+  orderItems  OrderItem[]
+
+  @@unique([storeId, slug])
+  @@index([storeId, status])
+  @@index([storeId, categoryId])
+  @@index([storeId, featured])
+  @@map("products")
+}
+
+model ProductImage {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  productId String  @map("product_id") @db.Uuid
+  /// Con qué color se corresponde la foto. Null si sirve para todos.
+  colorId   String? @map("color_id") @db.Uuid
+
+  /// Ruta en el almacenamiento, para poder borrar el archivo al quitar la fila.
+  storagePath String @map("storage_path")
+
+  /// Las tres medidas que genera `sharp` al subir: 1600, 800 y 400 px en WebP.
+  urlFull  String @map("url_full")
+  urlCard  String @map("url_card")
+  urlThumb String @map("url_thumb")
+
+  /// Miniatura diminuta embebida en base64, para pintar algo antes de que
+  /// cargue la foto real.
+  lqip String?
+
+  alt       String?
+  sortOrder Int     @default(0) @map("sort_order")
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  color   Color?  @relation(fields: [colorId], references: [id], onDelete: SetNull)
+
+  @@index([productId, sortOrder])
+  @@index([storeId])
+  @@map("product_images")
+}
+
+/// Una combinación concreta de color y talla: lo que de verdad tiene stock.
+///
+/// El inventario vive acá y no en el producto porque es lo único que permite
+/// decir "queda la M negra pero no la S". El pedido bloquea filas de esta
+/// tabla, no del producto.
+model Variant {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  productId String @map("product_id") @db.Uuid
+  colorId   String @map("color_id") @db.Uuid
+  sizeId    String @map("size_id") @db.Uuid
+
+  sku String?
+
+  stock Int @default(0)
+
+  /// Pisa el `basePrice` del producto cuando una talla vale distinto.
+  priceOverride Int? @map("price_override")
+
+  active Boolean @default(true)
+
+  store           Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product         Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  color           Color            @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  size            Size             @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  orderItems      OrderItem[]
+  restockRequests RestockRequest[]
+
+  @@unique([productId, colorId, sizeId])
+  @@unique([storeId, sku])
+  @@index([storeId])
+  @@index([productId])
+  @@map("variants")
+}
+
+// ---------------------------------------------------------------------------
+// Colecciones
+// ---------------------------------------------------------------------------
+
+model Collection {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  slug        String
+  name        String
+  description String?
+
+  heroImageUrl    String? @map("hero_image_url")
+  heroStoragePath String? @map("hero_storage_path")
+
+  active    Boolean @default(true)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store       Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items       CollectionProduct[]
+  heroForSettings StoreSettings[]
+
+  @@unique([storeId, slug])
+  @@index([storeId, sortOrder])
+  @@map("collections")
+}
+
+/// Un producto etiquetado sobre la foto editorial de una colección.
+model CollectionProduct {
+  storeId String @map("store_id") @db.Uuid
+
+  collectionId String @map("collection_id") @db.Uuid
+  productId    String @map("product_id") @db.Uuid
+
+  sortOrder Int @default(0) @map("sort_order")
+
+  /// Posición relativa (0-100) del punto sobre la foto. Null lo deja fuera de
+  /// la imagen y solo lo lista debajo.
+  hotspotX Decimal? @map("hotspot_x") @db.Decimal(5, 2)
+  hotspotY Decimal? @map("hotspot_y") @db.Decimal(5, 2)
+
+  store      Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, productId])
+  @@index([storeId])
+  @@map("collection_products")
+}
+
+/// Bloques de texto de la portada, bajo el hero.
+model HomeHighlight {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  eyebrow String
+  title   String
+  body    String
+
+  sortOrder Int     @default(0) @map("sort_order")
+  active    Boolean @default(true)
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, sortOrder])
+  @@map("home_highlights")
+}
+
+// ---------------------------------------------------------------------------
+// Comercio
+// ---------------------------------------------------------------------------
+
+enum CouponType {
+  PERCENT @map("percent")
+  FIXED   @map("fixed")
+
+  @@map("coupon_type")
+}
+
+model Coupon {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  /// Siempre en mayúsculas. Un CHECK lo garantiza en la base, porque el código
+  /// se compara tal cual y "verano10" nunca debe fallar contra "VERANO10".
+  code String
+
+  type  CouponType
+  value Int
+
+  minSubtotal Int @default(0) @map("min_subtotal")
+
+  startsAt DateTime? @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+
+  maxUses Int? @map("max_uses")
+  uses    Int  @default(0)
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store  Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@unique([storeId, code])
+  @@map("coupons")
+}
+
+model ShippingZone {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  name String
+  cost Int    @default(0)
+
+  /// Días estimados de entrega. Null lo oculta en la tienda.
+  etaDays Int? @map("eta_days")
+
+  active    Boolean @default(true)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  store  Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([storeId, sortOrder])
+  @@map("shipping_zones")
+}
+
+enum OrderStatus {
+  PENDING   @map("pending")
+  CONFIRMED @map("confirmed")
+  SHIPPED   @map("shipped")
+  DELIVERED @map("delivered")
+  CANCELLED @map("cancelled")
+
+  @@map("order_status")
+}
+
+model Order {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  /// Correlativo POR TIENDA. Ver `Store.nextOrderNumber`.
+  number Int
+
+  /// Token del enlace público del pedido. Permite compartirlo por WhatsApp sin
+  /// que alguien que adivine un número vea los demás pedidos.
+  /// Único en toda la plataforma: es una credencial, no un identificador.
+  publicToken String @unique @default(uuid()) @map("public_token") @db.Uuid
+
+  status OrderStatus @default(PENDING)
+
+  customerName    String  @map("customer_name")
+  customerPhone   String  @map("customer_phone")
+  customerCity    String? @map("customer_city")
+  customerAddress String? @map("customer_address")
+  customerNotes   String? @map("customer_notes")
+
+  shippingZoneId String? @map("shipping_zone_id") @db.Uuid
+  /// Nombre de la zona congelado al momento del pedido: si luego se renombra o
+  /// se borra, el pedido sigue diciendo lo que la clienta vio.
+  shippingZoneName String? @map("shipping_zone_name")
+  shippingCost     Int     @default(0) @map("shipping_cost")
+
+  couponId   String? @map("coupon_id") @db.Uuid
+  couponCode String? @map("coupon_code")
+
+  subtotal Int
+  discount Int @default(0)
+  total    Int
+
+  whatsappOpenedAt DateTime? @map("whatsapp_opened_at")
+  adminNotes       String?   @map("admin_notes")
+
+  /// Evita devolver el stock dos veces si se cancela un pedido ya cancelado.
+  stockRestored Boolean @default(false) @map("stock_restored")
+
+  /// Clave de idempotencia con la que se creó. Dos envíos con la misma clave
+  /// devuelven el mismo pedido en vez de crear dos.
+  idempotencyKey String? @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store        Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  shippingZone ShippingZone? @relation(fields: [shippingZoneId], references: [id], onDelete: SetNull)
+  coupon       Coupon?       @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  items        OrderItem[]
+
+  @@unique([storeId, number])
+  @@unique([storeId, idempotencyKey])
+  @@index([storeId, status, createdAt])
+  @@map("orders")
+}
+
+/// Línea de un pedido. Es una foto inmutable del momento de la compra.
+///
+/// Guarda nombre, color, talla y precio COPIADOS, no solo las claves foráneas.
+/// Si el producto cambia de precio, se renombra o se archiva, el pedido no
+/// muta: dice lo que la clienta compró y por cuánto.
+model OrderItem {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  orderId String @map("order_id") @db.Uuid
+
+  /// Se conservan por si hace falta rastrear, pero el pedido no depende de
+  /// ellas: si el producto se borra, quedan en null y las columnas copiadas
+  /// siguen contando la historia.
+  variantId String? @map("variant_id") @db.Uuid
+  productId String? @map("product_id") @db.Uuid
+
+  productName String @map("product_name")
+  productSlug String @map("product_slug")
+  colorName   String @map("color_name")
+  sizeLabel   String @map("size_label")
+  sku         String?
+
+  unitPrice Int @map("unit_price")
+  qty       Int
+  lineTotal Int @map("line_total")
+
+  store   Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([storeId])
+  @@map("order_items")
+}
+
+/// "Avísame cuando vuelva": la clienta deja un contacto sobre una talla agotada.
+model RestockRequest {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  variantId String @map("variant_id") @db.Uuid
+
+  /// Teléfono o correo. Texto libre porque la clienta escribe lo que prefiera.
+  contact String
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  notifiedAt DateTime? @map("notified_at")
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt])
+  @@map("restock_requests")
 }
