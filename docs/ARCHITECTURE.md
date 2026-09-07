@@ -215,8 +215,9 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
       integridad, triggers que derivan el `store_id` denormalizado, políticas de
       RLS y permisos para `tienda_app`. Aislamiento verificado contra la base:
       ver § 9.
-- [ ] **Fase 3 — Auth.** Registro de tienda, login, refresh con rotación,
-      guards, `switch-store`.
+- [x] **Fase 3 — Auth.** Registro de tienda, login, refresh con rotación y
+      detección de reuso, `switch-store`, `JwtAuthGuard` y `StoreRolesGuard`.
+      Integrada con el panel de SvelteKit: ver § 10.
 - [ ] **Fase 4 — Catálogo del panel.**
 - [ ] **Fase 5 — Catálogo público.**
 - [ ] **Fase 6 — Pedidos.**
@@ -261,3 +262,57 @@ así". Tiene que tratarlo como "no existe o no es mío", y responder 404.
 Esta comprobación se hizo a mano una vez. Convertirla en `test/rls.e2e-spec.ts`,
 que además recorra las tablas con columna `store_id` y falle si alguna no tiene
 política, es parte de la fase 3.
+
+---
+
+## 10. Cómo se integra con el frontend
+
+El frontend SvelteKit (`Projects/personal/tienda-ropa`) consume esta API
+**servidor contra servidor**: el navegador de la clienta nunca la llama.
+
+### Quién pone la cookie
+
+La API devuelve los tokens en el cuerpo de la respuesta y **no** emite cookies.
+Tiene que ser así: la API vive en otro dominio, y una cookie suya no llegaría
+al navegador. Quien pone la cookie de sesión —httpOnly, en su propio dominio—
+es SvelteKit, con lo que recibe de aquí.
+
+El resultado es que el navegador solo ve una cookie opaca. El access token y el
+refresh token no pisan el cliente en ningún momento, ni siquiera dentro del
+HTML serializado.
+
+### Dónde se renueva la sesión
+
+En `hooks.server.ts`, una vez por petición. No en cada `load`, por dos razones:
+sucede una sola vez aunque haya varios `load` en paralelo, y deja la cookie
+actualizada antes de que nadie use el token.
+
+Si el refresh falla, la sesión se borra en lugar de arrastrarse. Un refresh
+rechazado significa que el token fue revocado, que expiró, o que la API detectó
+reuso — en los tres casos lo correcto es volver a entrar, no reintentar.
+
+### Migración por rebanadas
+
+La tienda no se migra por capas sino por funciones completas. Hoy la
+autenticación ya es de esta API mientras el catálogo y los pedidos siguen en
+Supabase, y las dos cosas conviven sin romperse. Cada rebanada que se migra
+deja la tienda funcionando; Supabase se apaga cuando no quede ninguna.
+
+### Verificado de punta a punta
+
+| Paso                             | Resultado                                                 |
+| -------------------------------- | --------------------------------------------------------- |
+| `GET /admin` sin sesión          | 303 a `/admin/login?redirectTo=%2Fadmin`                  |
+| Login con contraseña incorrecta  | 401 «Correo o contraseña incorrectos.»                    |
+| Login correcto                   | 303 a `/admin`, cookie `tienda_session` httpOnly          |
+| `GET /admin` con sesión          | 200, el panel pinta el correo de la cuenta                |
+| Tokens en el HTML servido        | ninguno                                                   |
+| `POST /admin/logout`             | 303 al login, y el refresh token queda revocado en la API |
+| Tienda pública durante todo esto | sigue respondiendo 200                                    |
+
+### Una trampa de esta máquina
+
+`API_URL` apunta a `127.0.0.1`, no a `localhost`. En Windows, Node resuelve
+`localhost` a `::1` antes que a IPv4, y la API escucha en IPv4: con `localhost`
+la petición muere con ECONNREFUSED y el login responde «No pudimos conectar con
+el servidor», que parece un problema de credenciales y no lo es.
