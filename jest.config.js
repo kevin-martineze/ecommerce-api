@@ -8,11 +8,15 @@
  * Los alias de módulo se repiten aquí porque Jest no lee `paths` de tsconfig.
  * Si se agrega uno en tsconfig.json, hay que agregarlo también acá o los tests
  * fallarán con "cannot find module" mientras el build pasa sin quejarse.
+ *
+ * `.arch-spec.ts` son tests de arquitectura (el patrón de `micro-ehr`): no
+ * prueban un comportamiento sino una regla sobre el código mismo. Corren con
+ * los unitarios porque no necesitan base y tienen que romper el build igual.
  */
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: 'src',
-  testRegex: '.*\\.spec\\.ts$',
+  testRegex: '.*\\.(spec|arch-spec)\\.ts$',
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',
   },
