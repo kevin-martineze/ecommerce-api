@@ -67,8 +67,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
       // `ValidationPipe` responde con un objeto { message: string[], error }.
       // Se conserva el detalle porque el frontend lo pinta campo por campo.
+      // Una excepción de negocio también puede adjuntar `details` —qué prendas
+      // se agotaron, por qué no aplica un cupón— y ese se deja pasar tal cual.
       if (typeof response === 'object' && response !== null) {
-        const shape = response as { message?: unknown; error?: unknown };
+        const shape = response as { message?: unknown; error?: unknown; details?: unknown };
 
         return {
           statusCode: status,
@@ -76,7 +78,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
             ? 'La información enviada no es válida.'
             : String(shape.message ?? exception.message),
           error: typeof shape.error === 'string' ? shape.error : 'http_exception',
-          details: Array.isArray(shape.message) ? shape.message : undefined,
+          details: Array.isArray(shape.message) ? shape.message : shape.details,
           path,
           timestamp,
         };

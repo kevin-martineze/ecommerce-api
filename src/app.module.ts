@@ -9,6 +9,7 @@ import { CatalogModule } from '@modules/catalog/catalog.module';
 import { CommerceModule } from '@modules/commerce/commerce.module';
 import { ContentModule } from '@modules/content/content.module';
 import { HealthModule } from '@modules/health/health.module';
+import { OrdersModule } from '@modules/orders/orders.module';
 import { StorefrontModule } from '@modules/storefront/storefront.module';
 import { PrismaModule } from '@db/prisma.module';
 
@@ -38,6 +39,7 @@ import { PrismaModule } from '@db/prisma.module';
     ContentModule,
     CommerceModule,
     StorefrontModule,
+    OrdersModule,
     HealthModule,
   ],
   providers: [
