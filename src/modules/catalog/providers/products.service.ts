@@ -7,6 +7,7 @@ import {
   ProductListItemDto,
   UpdateProductDto,
 } from '@shared/dtos/catalog/product.dto';
+import { assertWithinPlan } from '@shared/billing/plan-limits';
 import { translatePrismaErrors } from '@shared/errors/translate-prisma-errors';
 import { imageObjectKeys } from '@shared/media/images';
 import { assertCategoryInStore } from '@shared/tenancy/store-references';
@@ -94,6 +95,14 @@ export class ProductsService {
   create(storeId: string, dto: CreateProductDto): Promise<ProductDetailDto> {
     return translatePrismaErrors(
       this.prisma.forStore(storeId, async (tx) => {
+        // Las archivadas cuentan: siguen ocupando catálogo y pueden volver.
+        await assertWithinPlan(
+          tx,
+          storeId,
+          'maxProducts',
+          await tx.product.count({ where: { storeId } }),
+        );
+
         if (dto.categoryId) {
           await assertCategoryInStore(tx, storeId, dto.categoryId);
         }

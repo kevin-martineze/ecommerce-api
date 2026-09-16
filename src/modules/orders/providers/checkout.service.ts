@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { assertWithinPlan } from '@shared/billing/plan-limits';
 import {
   computeTotals,
   COUPON_REJECTION_MESSAGE,
@@ -28,6 +29,7 @@ import {
   StockProblemDto,
 } from '@shared/dtos/orders/checkout.dto';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
+import { startOfMonthInBogota } from '@shared/utils/bogota-time';
 import { blankToNull } from '@shared/utils/text';
 import { isUniqueViolation, PrismaService, TenantClient } from '@db/prisma.service';
 
@@ -346,6 +348,17 @@ export class CheckoutService {
         details: problems,
       });
     }
+
+    // El límite del plan se mira con las variantes ya bloqueadas: dos pedidos
+    // simultáneos no pueden colarse los dos como "el último del mes".
+    await assertWithinPlan(
+      tx,
+      storeId,
+      'maxOrdersPerMonth',
+      await tx.order.count({
+        where: { storeId, createdAt: { gte: startOfMonthInBogota(new Date()) } },
+      }),
+    );
 
     const subtotal = priced.reduce((sum, line) => sum + line.lineTotal, 0);
     const coupon = await claimCoupon(tx, storeId, dto.couponCode, subtotal);

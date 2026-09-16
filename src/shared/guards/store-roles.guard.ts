@@ -38,6 +38,7 @@ export class StoreRolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<{
       user: AuthenticatedUser;
       params: Record<string, string | undefined>;
+      method: string;
     }>();
 
     const storeId = request.params.storeId;
@@ -56,11 +57,20 @@ export class StoreRolesGuard implements CanActivate {
 
     const membership = await this.prisma.storeMember.findUnique({
       where: { storeId_userId: { storeId, userId: request.user.id } },
-      select: { role: true },
+      select: { role: true, store: { select: { status: true } } },
     });
 
     if (!membership) {
       throw new ForbiddenException('No tienes acceso a esta tienda.');
+    }
+
+    // Tienda suspendida: el panel queda en lectura. Se puede mirar y exportar;
+    // no crear ni cambiar nada hasta que la plataforma la reactive.
+    if (membership.store.status === 'SUSPENDED' && request.method !== 'GET') {
+      throw new ForbiddenException({
+        message: 'La tienda está suspendida: el panel queda en solo lectura.',
+        error: 'store_suspended',
+      });
     }
 
     const requiredRoles = this.reflector.getAllAndOverride<MemberRole[] | undefined>(ROLES_KEY, [

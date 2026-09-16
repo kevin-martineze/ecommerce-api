@@ -1,11 +1,6 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ProductImage } from '@prisma/client';
+import { assertWithinPlan } from '@shared/billing/plan-limits';
 import { ProductImageDto } from '@shared/dtos/catalog/product.dto';
 import { imageObjectKeys, imageObjects, newStoragePath, processImage } from '@shared/media/images';
 import { Upload } from '@shared/media/upload';
@@ -60,18 +55,7 @@ export class ProductImagesService {
           await assertColorInStore(tx, storeId, colorId);
         }
 
-        const subscription = await tx.subscription.findUnique({
-          where: { storeId },
-          select: { plan: { select: { maxImagesPerProduct: true } } },
-        });
-        const limit = subscription?.plan.maxImagesPerProduct ?? null;
-
-        if (limit !== null && product._count.images >= limit) {
-          throw new ForbiddenException({
-            message: `Tu plan admite hasta ${limit} fotos por prenda.`,
-            error: 'plan_limit',
-          });
-        }
+        await assertWithinPlan(tx, storeId, 'maxImagesPerProduct', product._count.images);
 
         storagePath = newStoragePath(storeId, 'products', product.slug);
 

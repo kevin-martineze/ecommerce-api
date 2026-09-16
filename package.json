@@ -28,7 +28,9 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "db:import-supabase": "ts-node --transpile-only scripts/import-supabase.ts",
-    "db:import-supabase-media": "ts-node --transpile-only scripts/import-supabase-media.ts"
+    "db:import-supabase-media": "ts-node --transpile-only scripts/import-supabase-media.ts",
+    "platform:grant-admin": "ts-node --transpile-only scripts/grant-platform-admin.ts",
+    "platform:reconcile": "ts-node --transpile-only -r tsconfig-paths/register scripts/reconcile.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1133.0",
