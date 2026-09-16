@@ -33,6 +33,22 @@ interface SessionContext {
   ip?: string | null;
 }
 
+/**
+ * Ventana en la que volver a presentar un refresh token recién rotado NO cuenta
+ * como reuso.
+ *
+ * El frontend corre en funciones serverless: dos peticiones casi simultáneas
+ * con la misma cookie vencida pueden caer en instancias distintas y refrescar
+ * las dos con el mismo token. Sin esta ventana, la segunda dispara la detección
+ * de reuso y la dueña queda fuera de TODAS sus sesiones por abrir dos pestañas.
+ *
+ * Es un intercambio consciente: durante estos segundos, una copia robada del
+ * token también serviría. Treinta segundos alcanzan para la carrera y obligan
+ * al ladrón a usar el token en el mismo instante que la dueña. Es la idea del
+ * "reuse interval" que ofrecen los proveedores de identidad con rotación.
+ */
+const ROTATION_GRACE_MS = 30_000;
+
 @Injectable()
 export class TokenService {
   private readonly logger = new Logger(TokenService.name);
@@ -103,7 +119,9 @@ export class TokenService {
       throw new UnauthorizedException('La sesión no es válida. Vuelve a entrar.');
     }
 
-    if (stored.rotatedToId !== null || stored.revokedAt !== null) {
+    const alreadyUsed = stored.rotatedToId !== null || stored.revokedAt !== null;
+
+    if (alreadyUsed && !(await this.isConcurrentRefresh(stored))) {
       this.logger.warn(
         `Reuso de refresh token detectado para el usuario ${stored.userId}. Se revoca la cadena completa.`,
       );
@@ -121,17 +139,54 @@ export class TokenService {
 
     const issued = await this.issue(stored.userId, stored.user.email, storeId, context);
 
-    const replacement = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash: this.hashToken(issued.refreshToken) },
-      select: { id: true },
-    });
+    // Un token que llega dentro de la ventana de gracia ya tiene sucesor: no se
+    // vuelve a marcar. La sesión que se acaba de emitir es hermana de la de la
+    // primera rotación y vive por su cuenta.
+    if (!alreadyUsed) {
+      const replacement = await this.prisma.refreshToken.findUnique({
+        where: { tokenHash: this.hashToken(issued.refreshToken) },
+        select: { id: true },
+      });
 
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
-      data: { rotatedToId: replacement?.id ?? null, revokedAt: new Date() },
-    });
+      await this.prisma.refreshToken.update({
+        where: { id: stored.id },
+        data: { rotatedToId: replacement?.id ?? null, revokedAt: new Date() },
+      });
+    }
 
     return issued;
+  }
+
+  /**
+   * ¿Presentar este token ya usado es una carrera legítima y no un robo?
+   *
+   * Solo si se cumplen las tres:
+   *
+   * 1. Fue ROTADO —tiene sucesor—, no cerrado por un logout o una revocación
+   *    total. Un token cerrado no revive nunca.
+   * 2. La rotación fue hace menos de `ROTATION_GRACE_MS`.
+   * 3. Su sucesor no se cerró después. Si la dueña ya salió, no hay carrera: la
+   *    sesión terminó.
+   */
+  private async isConcurrentRefresh(stored: {
+    rotatedToId: string | null;
+    revokedAt: Date | null;
+  }): Promise<boolean> {
+    if (stored.rotatedToId === null || stored.revokedAt === null) {
+      return false;
+    }
+
+    if (Date.now() - stored.revokedAt.getTime() > ROTATION_GRACE_MS) {
+      return false;
+    }
+
+    const successor = await this.prisma.refreshToken.findUnique({
+      where: { id: stored.rotatedToId },
+      select: { revokedAt: true, rotatedToId: true },
+    });
+
+    // Revocado y sin sucesor propio: lo cerró un logout o una revocación total.
+    return successor !== null && (successor.revokedAt === null || successor.rotatedToId !== null);
   }
 
   /** Cierra una sesión concreta. No toca las demás sesiones de la cuenta. */
