@@ -52,7 +52,70 @@ const envSchema = z.object({
         .map((origin) => origin.trim())
         .filter(Boolean),
     ),
+
+  /**
+   * Dónde viven las fotos.
+   *
+   * `local` escribe en disco y la propia API las sirve bajo `/media`: sirve
+   * para desarrollo y para un solo servidor. `s3` es cualquier almacenamiento
+   * compatible (R2, S3, MinIO), que es lo que hace falta con varias
+   * instancias o un CDN delante.
+   */
+  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  MEDIA_DIR: z.string().min(1).default('media'),
+  MEDIA_PUBLIC_URL: z
+    .string()
+    .url()
+    .default('http://127.0.0.1:3000/media')
+    .transform(stripTrailingSlash),
+
+  /** Solo con `STORAGE_DRIVER=s3`. Sin `S3_ENDPOINT` se usa AWS con la región. */
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().min(1).default('auto'),
+  S3_BUCKET: z.string().min(1).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  /** Base pública desde la que el navegador lee el bucket (dominio de R2, CDN…). */
+  S3_PUBLIC_URL: z.string().url().optional().transform(optionalStripTrailingSlash),
+  /** MinIO y algunos S3 compatibles exigen `bucket` en la ruta y no como subdominio. */
+  S3_FORCE_PATH_STYLE: z
+    .string()
+    .default('false')
+    .transform((value) => value === 'true' || value === '1'),
 });
+
+/**
+ * Lo que zod no puede expresar campo a campo: las variables de S3 son
+ * opcionales, salvo que el driver sea S3.
+ */
+const envSchemaWithRules = envSchema.superRefine((env, ctx) => {
+  if (env.STORAGE_DRIVER !== 's3') {
+    return;
+  }
+
+  for (const key of [
+    'S3_BUCKET',
+    'S3_ACCESS_KEY_ID',
+    'S3_SECRET_ACCESS_KEY',
+    'S3_PUBLIC_URL',
+  ] as const) {
+    if (!env[key]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `Obligatoria cuando STORAGE_DRIVER=s3.`,
+      });
+    }
+  }
+});
+
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function optionalStripTrailingSlash(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : stripTrailingSlash(value);
+}
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -63,7 +126,7 @@ export type Env = z.infer<typeof envSchema>;
  * de instanciar cualquier provider: si algo falta, nada llega a conectarse.
  */
 export function validateEnv(raw: Record<string, unknown>): Env {
-  const parsed = envSchema.safeParse(raw);
+  const parsed = envSchemaWithRules.safeParse(raw);
 
   if (!parsed.success) {
     const detail = parsed.error.issues

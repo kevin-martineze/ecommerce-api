@@ -6,3 +6,6 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+
+# Fotos con el driver local (ver src/shared/config/env.ts)
+/media/

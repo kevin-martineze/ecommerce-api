@@ -27,12 +27,15 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
-    "db:import-supabase": "ts-node --transpile-only scripts/import-supabase.ts"
+    "db:import-supabase": "ts-node --transpile-only scripts/import-supabase.ts",
+    "db:import-supabase-media": "ts-node --transpile-only scripts/import-supabase-media.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1133.0",
     "@fastify/compress": "^8.0.1",
     "@fastify/cookie": "^11.0.2",
     "@fastify/helmet": "^13.0.1",
+    "@fastify/multipart": "^10.1.1",
     "@fastify/static": "^8.0.4",
     "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",
@@ -54,6 +57,7 @@
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.4",
     "zod": "^3.24.1"
   },
   "devDependencies": {

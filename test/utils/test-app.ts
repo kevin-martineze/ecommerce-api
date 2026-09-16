@@ -1,11 +1,14 @@
 import 'dotenv/config';
 
 import { randomBytes } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import fastifyMultipart from '@fastify/multipart';
 import { Client } from 'pg';
 import { buildValidationPipe } from '@shared/config/validation-pipe';
+import { MULTIPART_OPTIONS } from '@shared/media/upload';
 
 import { AppModule } from '../../src/app.module';
 
@@ -38,6 +41,14 @@ export interface TestResponse<T> {
   body: T;
 }
 
+export interface TestFile {
+  /** Nombre del campo del formulario. */
+  field: string;
+  filename: string;
+  contentType: string;
+  data: Buffer;
+}
+
 export interface TestApp {
   call<T = unknown>(
     method: Method,
@@ -46,19 +57,37 @@ export interface TestApp {
     payload?: object,
     headers?: Record<string, string>,
   ): Promise<TestResponse<T>>;
+  /** Envía un archivo como multipart/form-data, con campos de texto opcionales. */
+  upload<T = unknown>(
+    method: Method,
+    url: string,
+    session: { token: string },
+    file: TestFile,
+    fields?: Record<string, string>,
+  ): Promise<TestResponse<T>>;
   /** Registra una tienda con su dueña y devuelve la sesión recién emitida. */
   register(label: string): Promise<Session>;
+  /** Directorio donde el driver local deja las fotos durante esta prueba. */
+  mediaDir: string;
   /** Conexión con el rol dueño, para preparar estados que la API no deja crear. */
   withOwner<T>(work: (client: Client) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
 export async function startTestApp(): Promise<TestApp> {
+  // Lo fija `setup-env.ts` antes de importar `AppModule`; ver allí por qué.
+  const mediaDir = process.env.MEDIA_DIR;
+
+  if (!mediaDir) {
+    throw new Error('MEDIA_DIR no está definida: falta test/setup-env.ts en jest-e2e.json.');
+  }
+
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
 
   app.setGlobalPrefix('v1');
   app.useGlobalPipes(buildValidationPipe());
+  await app.register(fastifyMultipart, MULTIPART_OPTIONS);
 
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
@@ -101,9 +130,49 @@ export async function startTestApp(): Promise<TestApp> {
     }
   };
 
+  const upload = async <T>(
+    method: Method,
+    url: string,
+    session: { token: string },
+    file: TestFile,
+    fields: Record<string, string> = {},
+  ): Promise<TestResponse<T>> => {
+    const boundary = `----prueba${randomBytes(8).toString('hex')}`;
+    const parts = Object.entries(fields).map(
+      ([name, value]) =>
+        `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    );
+
+    const payload = Buffer.concat([
+      Buffer.from(parts.join(''), 'utf8'),
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${file.filename}"\r\nContent-Type: ${file.contentType}\r\n\r\n`,
+        'utf8',
+      ),
+      file.data,
+      Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'),
+    ]);
+
+    const response = await app.inject({
+      method,
+      url: `/v1${url}`,
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+
+    const body: T = JSON.parse(response.body || 'null');
+
+    return { status: response.statusCode, body };
+  };
+
   return {
     call,
+    upload,
     withOwner,
+    mediaDir,
 
     async register(label: string): Promise<Session> {
       const email = `e2e-${label}-${run}@tienda.test`;
@@ -140,6 +209,7 @@ export async function startTestApp(): Promise<TestApp> {
 
     async close(): Promise<void> {
       await app.close();
+      await rm(mediaDir, { recursive: true, force: true });
 
       // La cascada desde `stores` arrastra todo el catálogo; la de `users`, las sesiones.
       await withOwner(async (client) => {

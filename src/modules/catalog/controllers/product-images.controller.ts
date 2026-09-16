@@ -1,12 +1,24 @@
-import { Body, Controller, Delete, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Req,
+} from '@nestjs/common';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FastifyRequest } from 'fastify';
 import { StoreRoute } from '@shared/decorators/store-route.decorator';
 import { ProductImageDto } from '@shared/dtos/catalog/product.dto';
 import {
-  AddProductImageDto,
-  DeleteProductImageResultDto,
   ReorderProductImagesDto,
+  UploadProductImageDto,
 } from '@shared/dtos/catalog/product-image.dto';
+import { readUpload } from '@shared/media/upload';
 
 import { ProductImagesService } from '../providers/product-images.service';
 
@@ -17,13 +29,15 @@ export class ProductImagesController {
   constructor(private readonly images: ProductImagesService) {}
 
   @Post('products/:productId/images')
-  @ApiOperation({ summary: 'Registra una foto ya subida al almacenamiento. Va al final.' })
-  add(
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UploadProductImageDto })
+  @ApiOperation({ summary: 'Sube una foto: se convierte a WebP en tres tamaños y va al final.' })
+  async upload(
     @Param('storeId') storeId: string,
     @Param('productId', ParseUUIDPipe) productId: string,
-    @Body() dto: AddProductImageDto,
+    @Req() request: FastifyRequest,
   ): Promise<ProductImageDto> {
-    return this.images.add(storeId, productId, dto);
+    return this.images.upload(storeId, productId, await readUpload(request));
   }
 
   @Put('products/:productId/images/order')
@@ -37,11 +51,12 @@ export class ProductImagesController {
   }
 
   @Delete('product-images/:imageId')
-  @ApiOperation({ summary: 'Quita una foto y devuelve la ruta del archivo para borrarlo.' })
-  remove(
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Quita una foto y borra sus archivos.' })
+  async remove(
     @Param('storeId') storeId: string,
     @Param('imageId', ParseUUIDPipe) imageId: string,
-  ): Promise<DeleteProductImageResultDto> {
-    return this.images.remove(storeId, imageId);
+  ): Promise<void> {
+    await this.images.remove(storeId, imageId);
   }
 }

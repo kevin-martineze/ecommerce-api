@@ -8,11 +8,13 @@ import {
   UpdateProductDto,
 } from '@shared/dtos/catalog/product.dto';
 import { translatePrismaErrors } from '@shared/errors/translate-prisma-errors';
+import { imageObjectKeys } from '@shared/media/images';
 import { assertCategoryInStore } from '@shared/tenancy/store-references';
 import { firstAvailable, slugify } from '@shared/utils/slug';
 import { blankToNull } from '@shared/utils/text';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
+import { ProductImagesService } from './product-images.service';
 import { toVariantDto, VARIANT_INCLUDE } from './variant-mapping';
 
 /** Mismo techo que el panel actual. Una tienda de ropa pequeña no se acerca. */
@@ -39,7 +41,10 @@ type ProductWithDetail = Prisma.ProductGetPayload<{ include: typeof DETAIL_INCLU
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly images: ProductImagesService,
+  ) {}
 
   list(storeId: string, search: string | undefined): Promise<ProductListItemDto[]> {
     return this.prisma.forStore(storeId, async (tx) => {
@@ -185,12 +190,11 @@ export class ProductsService {
    * enlace es lo que deja ir de un pedido a la prenda y contar ventas por
    * prenda. Archivar la saca de la tienda igual y no rompe nada de eso.
    *
-   * Las fotos no se tocan acá: su archivo vive en el almacenamiento, que es
-   * otra fase. La respuesta devuelve sus rutas para que quien las guarda las
-   * borre, y solo cuando de verdad se borró la fila.
+   * Los archivos de las fotos se borran después de confirmar la transacción y
+   * solo si de verdad se borró la fila.
    */
-  remove(storeId: string, productId: string): Promise<DeleteProductResultDto> {
-    return this.prisma.forStore<DeleteProductResultDto>(storeId, async (tx) => {
+  async remove(storeId: string, productId: string): Promise<DeleteProductResultDto> {
+    const outcome = await this.prisma.forStore(storeId, async (tx) => {
       const product = await tx.product.findFirst({
         where: { id: productId, storeId },
         select: {
@@ -209,16 +213,20 @@ export class ProductsService {
           data: { status: 'ARCHIVED' },
         });
 
-        return { result: 'archived', storagePaths: [] };
+        return { result: 'archived' as const, storagePaths: [] };
       }
 
       await tx.product.delete({ where: { id: productId, storeId } });
 
       return {
-        result: 'deleted',
+        result: 'deleted' as const,
         storagePaths: product.images.map((image) => image.storagePath),
       };
     });
+
+    await this.images.discard(outcome.storagePaths.flatMap(imageObjectKeys));
+
+    return { result: outcome.result };
   }
 }
 

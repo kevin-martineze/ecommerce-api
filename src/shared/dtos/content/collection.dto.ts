@@ -5,7 +5,6 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUrl,
   Matches,
   Max,
   MaxLength,
@@ -50,26 +49,6 @@ export class CreateCollectionDto {
   @Min(0)
   @Max(999)
   sortOrder?: number;
-
-  /**
-   * Foto de portada ya subida al almacenamiento (puente hasta la fase de
-   * medios). URL y ruta van juntas: una sin la otra deja un archivo que nadie
-   * sabe borrar, o una foto que no se ve.
-   */
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @IsUrl(
-    { require_protocol: true, require_tld: false, protocols: ['http', 'https'] },
-    { message: 'La URL de la foto no es válida.' },
-  )
-  @MaxLength(500)
-  heroImageUrl?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @IsString()
-  @MaxLength(300)
-  heroStoragePath?: string | null;
 }
 
 /** El slug no se edita: es la URL pública de la colección. */
@@ -155,21 +134,4 @@ export class CollectionAdminDto {
 
   @ApiProperty({ type: [CollectionItemAdminDto] })
   items!: CollectionItemAdminDto[];
-}
-
-export class UpdateCollectionResultDto {
-  @ApiProperty({ type: CollectionAdminDto })
-  collection!: CollectionAdminDto;
-
-  @ApiProperty({
-    nullable: true,
-    description:
-      'Ruta de la foto anterior si se reemplazó o quitó: hay que borrarla del almacenamiento.',
-  })
-  replacedHeroStoragePath!: string | null;
-}
-
-export class DeleteCollectionResultDto {
-  @ApiProperty({ type: [String], description: 'Archivos que quedaron sin fila y hay que borrar.' })
-  storagePaths!: string[];
 }

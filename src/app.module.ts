@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from '@shared/config/env';
 import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
+import { StorageModule } from '@shared/storage/storage.module';
 import { AuthModule } from '@modules/auth/auth.module';
 import { CatalogModule } from '@modules/catalog/catalog.module';
 import { CommerceModule } from '@modules/commerce/commerce.module';
@@ -34,6 +35,7 @@ import { PrismaModule } from '@db/prisma.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
 
     PrismaModule,
+    StorageModule,
     AuthModule,
     CatalogModule,
     ContentModule,

@@ -1,67 +1,28 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  IsArray,
-  IsOptional,
-  IsString,
-  IsUrl,
-  IsUUID,
-  Matches,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
-import { Trim } from '@shared/dtos/transforms';
-
-const IMAGE_URL = { require_protocol: true, require_tld: false, protocols: ['http', 'https'] };
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsUUID } from 'class-validator';
 
 /**
- * Registra una foto que el panel YA subió al almacenamiento.
- *
- * Es un puente hasta la fase de medios: hoy el frontend convierte la foto con
- * `sharp` y la sube a Supabase Storage, y la API solo guarda dónde quedó. Cuando
- * la subida pase a la API, este endpoint desaparece.
+ * Solo documenta el multipart en Swagger: los campos llegan junto al archivo y
+ * se leen a mano en `readUpload`, no por el pipe de validación.
  */
-export class AddProductImageDto {
-  @ApiProperty({ description: 'Ruta base en el almacenamiento, sin sufijo de tamaño.' })
-  @Trim()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(300)
-  storagePath!: string;
+export class UploadProductImageDto {
+  @ApiProperty({ type: 'string', format: 'binary', description: 'La foto. Hasta 12 MB.' })
+  file!: unknown;
 
-  @ApiProperty()
-  @IsUrl(IMAGE_URL, { message: 'La URL de la foto no es válida.' })
-  @MaxLength(500)
-  urlFull!: string;
+  @ApiPropertyOptional({ format: 'uuid', description: 'Color al que corresponde la foto.' })
+  colorId?: string;
 
-  @ApiProperty()
-  @IsUrl(IMAGE_URL, { message: 'La URL de la foto no es válida.' })
-  @MaxLength(500)
-  urlCard!: string;
+  @ApiPropertyOptional({ description: 'Texto alternativo. Si no viene, el nombre de la prenda.' })
+  alt?: string;
+}
 
-  @ApiProperty()
-  @IsUrl(IMAGE_URL, { message: 'La URL de la foto no es válida.' })
-  @MaxLength(500)
-  urlThumb!: string;
-
-  @ApiPropertyOptional({ nullable: true, description: 'Miniatura borrosa embebida (data URI).' })
-  @IsOptional()
-  @Matches(/^data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+$/, { message: 'La miniatura no es válida.' })
-  @MaxLength(8000)
-  lqip?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  @MaxLength(200)
-  alt?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'Color al que corresponde.' })
-  @IsOptional()
-  @IsUUID(undefined, { message: 'El color no es válido.' })
-  colorId?: string | null;
+export class UploadHeroImageDto {
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    description: 'La foto de portada. Hasta 12 MB.',
+  })
+  file!: unknown;
 }
 
 export class ReorderProductImagesDto {
@@ -74,11 +35,4 @@ export class ReorderProductImagesDto {
   @ArrayMaxSize(50)
   @IsUUID(undefined, { each: true })
   imageIds!: string[];
-}
-
-export class DeleteProductImageResultDto {
-  @ApiProperty({
-    description: 'Ruta del archivo que quedó sin fila: hay que borrarlo del almacenamiento.',
-  })
-  storagePath!: string;
 }

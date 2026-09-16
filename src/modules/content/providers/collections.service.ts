@@ -1,14 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   CollectionAdminDto,
   CreateCollectionDto,
-  DeleteCollectionResultDto,
   SetCollectionProductDto,
   UpdateCollectionDto,
-  UpdateCollectionResultDto,
 } from '@shared/dtos/content/collection.dto';
 import { translatePrismaErrors } from '@shared/errors/translate-prisma-errors';
+import { imageObjectKeys, imageObjects, newStoragePath, processImage } from '@shared/media/images';
+import { Upload } from '@shared/media/upload';
+import { MediaStorage } from '@shared/storage/media-storage';
 import { assertCollectionInStore, assertProductInStore } from '@shared/tenancy/store-references';
 import { firstAvailable, slugify } from '@shared/utils/slug';
 import { blankToNull } from '@shared/utils/text';
@@ -29,7 +30,12 @@ const SLUG_TAKEN = 'Ya existe una colección con ese slug.';
 /** Colecciones editoriales: foto de portada y prendas etiquetadas sobre ella. */
 @Injectable()
 export class CollectionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CollectionsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: MediaStorage,
+  ) {}
 
   list(storeId: string): Promise<CollectionAdminDto[]> {
     return this.prisma.forStore(storeId, async (tx) => {
@@ -44,8 +50,6 @@ export class CollectionsService {
   }
 
   create(storeId: string, dto: CreateCollectionDto): Promise<CollectionAdminDto> {
-    assertHeroPair(dto.heroImageUrl, dto.heroStoragePath);
-
     return translatePrismaErrors(
       this.prisma.forStore(storeId, async (tx) => {
         const slug = dto.slug ?? (await availableSlug(tx, storeId, dto.name));
@@ -58,8 +62,6 @@ export class CollectionsService {
             description: blankToNull(dto.description) ?? null,
             active: dto.active ?? true,
             sortOrder: dto.sortOrder ?? 0,
-            heroImageUrl: dto.heroImageUrl ?? null,
-            heroStoragePath: dto.heroStoragePath ?? null,
           },
           include: WITH_ITEMS,
         });
@@ -70,68 +72,110 @@ export class CollectionsService {
     );
   }
 
-  /**
-   * Si cambia la foto de portada, devuelve la ruta de la anterior.
-   *
-   * Borrar el archivo le toca a quien lo subió (hoy, el panel). Se borra
-   * DESPUÉS de guardar la nueva: si algo falla antes, no se pierde nada.
-   */
   update(
     storeId: string,
     collectionId: string,
     dto: UpdateCollectionDto,
-  ): Promise<UpdateCollectionResultDto> {
-    assertHeroPair(dto.heroImageUrl, dto.heroStoragePath);
+  ): Promise<CollectionAdminDto> {
+    return translatePrismaErrors(
+      this.prisma.forStore(storeId, async (tx) => {
+        const collection = await tx.collection.update({
+          where: { id: collectionId, storeId },
+          data: {
+            name: dto.name ?? undefined,
+            description: blankToNull(dto.description),
+            active: dto.active ?? undefined,
+            sortOrder: dto.sortOrder ?? undefined,
+          },
+          include: WITH_ITEMS,
+        });
 
-    return this.prisma.forStore(storeId, async (tx) => {
-      const current = await tx.collection.findFirst({
-        where: { id: collectionId, storeId },
-        select: { heroStoragePath: true },
+        return toDto(collection);
+      }),
+      { notFound: NOT_FOUND },
+    );
+  }
+
+  /**
+   * Cambia la foto de portada.
+   *
+   * La foto se convierte antes de abrir la transacción y los archivos nuevos
+   * se escriben dentro, tras comprobar que la colección existe. La anterior se
+   * borra al final, ya con la nueva guardada: un fallo a medias no pierde nada.
+   */
+  async setHero(
+    storeId: string,
+    collectionId: string,
+    upload: Upload,
+  ): Promise<CollectionAdminDto> {
+    const processed = await processImage(upload.buffer);
+    let storagePath: string | null = null;
+
+    let previous: string | null = null;
+    let collection: CollectionAdminDto;
+
+    try {
+      collection = await this.prisma.forStore(storeId, async (tx) => {
+        const current = await tx.collection.findFirst({
+          where: { id: collectionId, storeId },
+          select: { slug: true, heroStoragePath: true },
+        });
+
+        if (!current) {
+          throw new NotFoundException(NOT_FOUND);
+        }
+
+        previous = current.heroStoragePath;
+        storagePath = newStoragePath(storeId, 'collections', current.slug);
+
+        await this.storage.put(imageObjects(storagePath, processed));
+
+        const updated = await tx.collection.update({
+          where: { id: collectionId, storeId },
+          data: {
+            heroImageUrl: this.storage.publicUrl(`${storagePath}-full.webp`),
+            heroStoragePath: storagePath,
+          },
+          include: WITH_ITEMS,
+        });
+
+        return toDto(updated);
       });
-
-      if (!current) {
-        throw new NotFoundException(NOT_FOUND);
+    } catch (error) {
+      if (storagePath) {
+        await this.discard(imageObjectKeys(storagePath));
       }
 
-      const collection = await tx.collection.update({
-        where: { id: collectionId, storeId },
-        data: {
-          name: dto.name ?? undefined,
-          description: blankToNull(dto.description),
-          active: dto.active ?? undefined,
-          sortOrder: dto.sortOrder ?? undefined,
-          heroImageUrl: dto.heroImageUrl,
-          heroStoragePath: dto.heroStoragePath,
-        },
-        include: WITH_ITEMS,
-      });
+      throw error;
+    }
 
-      const heroChanged =
-        dto.heroStoragePath !== undefined && dto.heroStoragePath !== current.heroStoragePath;
+    if (previous) {
+      await this.discard(imageObjectKeys(previous));
+    }
 
-      return {
-        collection: toDto(collection),
-        replacedHeroStoragePath: heroChanged ? current.heroStoragePath : null,
-      };
-    });
+    return collection;
   }
 
   /** La portada que la apuntaba vuelve a los textos: `heroCollectionId` es `onDelete: SetNull`. */
-  remove(storeId: string, collectionId: string): Promise<DeleteCollectionResultDto> {
-    return this.prisma.forStore(storeId, async (tx) => {
-      const collection = await tx.collection.findFirst({
+  async remove(storeId: string, collectionId: string): Promise<void> {
+    const collection = await this.prisma.forStore(storeId, async (tx) => {
+      const found = await tx.collection.findFirst({
         where: { id: collectionId, storeId },
         select: { heroStoragePath: true },
       });
 
-      if (!collection) {
+      if (!found) {
         throw new NotFoundException(NOT_FOUND);
       }
 
       await tx.collection.delete({ where: { id: collectionId, storeId } });
 
-      return { storagePaths: collection.heroStoragePath ? [collection.heroStoragePath] : [] };
+      return found;
     });
+
+    if (collection.heroStoragePath) {
+      await this.discard(imageObjectKeys(collection.heroStoragePath));
+    }
   }
 
   /** Etiqueta una prenda en la colección, o mueve su punto si ya estaba. */
@@ -186,12 +230,18 @@ export class CollectionsService {
       }
     });
   }
-}
 
-function assertHeroPair(url: string | null | undefined, path: string | null | undefined): void {
-  // Las dos vienen, o ninguna. Y si vienen, las dos con valor o las dos en null.
-  if ((url === undefined) !== (path === undefined) || (url === null) !== (path === null)) {
-    throw new BadRequestException('La foto necesita URL y ruta juntas.');
+  /** Borra archivos sin frenar lo que ya se confirmó en la base. Un huérfano es mejor que una fila rota. */
+  private async discard(keys: string[]): Promise<void> {
+    try {
+      await this.storage.remove(keys);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron borrar ${keys.length} archivos del almacenamiento: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }
 

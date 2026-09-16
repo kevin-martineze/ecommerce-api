@@ -1,52 +1,107 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ProductImage } from '@prisma/client';
 import { ProductImageDto } from '@shared/dtos/catalog/product.dto';
-import {
-  AddProductImageDto,
-  DeleteProductImageResultDto,
-} from '@shared/dtos/catalog/product-image.dto';
-import { assertColorInStore, assertProductInStore } from '@shared/tenancy/store-references';
+import { imageObjectKeys, imageObjects, newStoragePath, processImage } from '@shared/media/images';
+import { Upload } from '@shared/media/upload';
+import { MediaStorage } from '@shared/storage/media-storage';
+import { assertColorInStore } from '@shared/tenancy/store-references';
 import { blankToNull } from '@shared/utils/text';
 import { PrismaService } from '@db/prisma.service';
 
-/**
- * Fotos de prenda: registrar, ordenar y quitar.
- *
- * Los archivos no pasan por aquí todavía (ver AddProductImageDto). Por eso
- * quitar una foto devuelve su ruta: quien la subió es quien la borra.
- */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Fotos de prenda: subir, ordenar y quitar. */
 @Injectable()
 export class ProductImagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ProductImagesService.name);
 
-  add(storeId: string, productId: string, dto: AddProductImageDto): Promise<ProductImageDto> {
-    return this.prisma.forStore(storeId, async (tx) => {
-      await assertProductInStore(tx, storeId, productId);
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: MediaStorage,
+  ) {}
 
-      if (dto.colorId) {
-        await assertColorInStore(tx, storeId, dto.colorId);
+  /**
+   * Procesa la foto, la guarda en el almacenamiento y la registra.
+   *
+   * El orden importa: la imagen se convierte ANTES de abrir la transacción,
+   * porque `sharp` tarda y no hay razón para tener filas bloqueadas mientras
+   * tanto. Los archivos se escriben dentro de la transacción, después de las
+   * comprobaciones; si el registro falla, se borran.
+   */
+  async upload(storeId: string, productId: string, upload: Upload): Promise<ProductImageDto> {
+    const colorId = upload.fields.colorId?.trim() || null;
+    const alt = blankToNull(upload.fields.alt?.trim());
+
+    if (colorId && !UUID.test(colorId)) {
+      throw new BadRequestException('El color no es válido.');
+    }
+
+    const processed = await processImage(upload.buffer);
+    let storagePath: string | null = null;
+
+    try {
+      return await this.prisma.forStore(storeId, async (tx) => {
+        const product = await tx.product.findFirst({
+          where: { id: productId, storeId },
+          select: { slug: true, name: true, _count: { select: { images: true } } },
+        });
+
+        if (!product) {
+          throw new NotFoundException('Esa prenda no existe.');
+        }
+
+        if (colorId) {
+          await assertColorInStore(tx, storeId, colorId);
+        }
+
+        const subscription = await tx.subscription.findUnique({
+          where: { storeId },
+          select: { plan: { select: { maxImagesPerProduct: true } } },
+        });
+        const limit = subscription?.plan.maxImagesPerProduct ?? null;
+
+        if (limit !== null && product._count.images >= limit) {
+          throw new ForbiddenException({
+            message: `Tu plan admite hasta ${limit} fotos por prenda.`,
+            error: 'plan_limit',
+          });
+        }
+
+        storagePath = newStoragePath(storeId, 'products', product.slug);
+
+        await this.storage.put(imageObjects(storagePath, processed));
+
+        const image = await tx.productImage.create({
+          data: {
+            storeId,
+            productId,
+            colorId,
+            storagePath,
+            urlFull: this.storage.publicUrl(`${storagePath}-full.webp`),
+            urlCard: this.storage.publicUrl(`${storagePath}-card.webp`),
+            urlThumb: this.storage.publicUrl(`${storagePath}-thumb.webp`),
+            lqip: processed.lqip,
+            alt: alt ?? product.name,
+            // La foto nueva va al final: la principal no cambia por subir otra.
+            sortOrder: product._count.images,
+          },
+        });
+
+        return toImageDto(image);
+      });
+    } catch (error) {
+      if (storagePath) {
+        await this.discard(imageObjectKeys(storagePath));
       }
 
-      // La foto nueva va al final: la principal no cambia por subir otra.
-      const existing = await tx.productImage.count({ where: { storeId, productId } });
-
-      const image = await tx.productImage.create({
-        data: {
-          storeId,
-          productId,
-          colorId: dto.colorId ?? null,
-          storagePath: dto.storagePath,
-          urlFull: dto.urlFull,
-          urlCard: dto.urlCard,
-          urlThumb: dto.urlThumb,
-          lqip: dto.lqip ?? null,
-          alt: blankToNull(dto.alt) ?? null,
-          sortOrder: existing,
-        },
-      });
-
-      return toImageDto(image);
-    });
+      throw error;
+    }
   }
 
   /**
@@ -88,21 +143,42 @@ export class ProductImagesService {
     });
   }
 
-  remove(storeId: string, imageId: string): Promise<DeleteProductImageResultDto> {
-    return this.prisma.forStore(storeId, async (tx) => {
-      const image = await tx.productImage.findFirst({
+  /** La fila primero y el archivo después: nunca queda una prenda apuntando a una foto que no está. */
+  async remove(storeId: string, imageId: string): Promise<void> {
+    const image = await this.prisma.forStore(storeId, async (tx) => {
+      const found = await tx.productImage.findFirst({
         where: { id: imageId, storeId },
         select: { storagePath: true },
       });
 
-      if (!image) {
+      if (!found) {
         throw new NotFoundException('Esa foto no existe.');
       }
 
       await tx.productImage.delete({ where: { id: imageId, storeId } });
 
-      return { storagePath: image.storagePath };
+      return found;
     });
+
+    await this.discard(imageObjectKeys(image.storagePath));
+  }
+
+  /**
+   * Borra archivos sin frenar la operación que ya se confirmó en la base.
+   *
+   * Si falla, queda un archivo huérfano —espacio perdido— que es mucho mejor
+   * que una fila apuntando a una foto que ya no está.
+   */
+  async discard(keys: string[]): Promise<void> {
+    try {
+      await this.storage.remove(keys);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron borrar ${keys.length} archivos del almacenamiento: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }
 

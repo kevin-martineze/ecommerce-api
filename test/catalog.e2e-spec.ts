@@ -330,14 +330,14 @@ describe('Catálogo del panel (e2e)', () => {
     });
 
     it('borra una prenda sin pedidos', async () => {
-      const { status, body } = await call<{ result: string; storagePaths: string[] }>(
+      const { status, body } = await call<{ result: string }>(
         'DELETE',
         `/stores/${a.storeId}/products/${product.id}`,
         a,
       );
 
       expect(status).toBe(200);
-      expect(body).toEqual({ result: 'deleted', storagePaths: [] });
+      expect(body).toEqual({ result: 'deleted' });
 
       const gone = await call('GET', `/stores/${a.storeId}/products/${product.id}`, a);
 

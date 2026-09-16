@@ -10,17 +10,19 @@ import {
   Patch,
   Post,
   Put,
+  Req,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FastifyRequest } from 'fastify';
 import { StoreRoute } from '@shared/decorators/store-route.decorator';
+import { UploadHeroImageDto } from '@shared/dtos/catalog/product-image.dto';
 import {
   CollectionAdminDto,
   CreateCollectionDto,
-  DeleteCollectionResultDto,
   SetCollectionProductDto,
   UpdateCollectionDto,
-  UpdateCollectionResultDto,
 } from '@shared/dtos/content/collection.dto';
+import { readUpload } from '@shared/media/upload';
 
 import { CollectionsService } from '../providers/collections.service';
 
@@ -46,22 +48,35 @@ export class CollectionsController {
   }
 
   @Patch(':collectionId')
-  @ApiOperation({ summary: 'Cambia datos o foto. Si reemplaza la foto, devuelve la ruta vieja.' })
+  @ApiOperation({ summary: 'Cambia nombre, descripción, orden o visibilidad.' })
   update(
     @Param('storeId') storeId: string,
     @Param('collectionId', ParseUUIDPipe) collectionId: string,
     @Body() dto: UpdateCollectionDto,
-  ): Promise<UpdateCollectionResultDto> {
+  ): Promise<CollectionAdminDto> {
     return this.collections.update(storeId, collectionId, dto);
   }
 
-  @Delete(':collectionId')
-  @ApiOperation({ summary: 'Borra la colección y devuelve la ruta de su foto para borrarla.' })
-  remove(
+  @Put(':collectionId/hero')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UploadHeroImageDto })
+  @ApiOperation({ summary: 'Cambia la foto de portada. La anterior se borra.' })
+  async setHero(
     @Param('storeId') storeId: string,
     @Param('collectionId', ParseUUIDPipe) collectionId: string,
-  ): Promise<DeleteCollectionResultDto> {
-    return this.collections.remove(storeId, collectionId);
+    @Req() request: FastifyRequest,
+  ): Promise<CollectionAdminDto> {
+    return this.collections.setHero(storeId, collectionId, await readUpload(request));
+  }
+
+  @Delete(':collectionId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Borra la colección y su foto.' })
+  async remove(
+    @Param('storeId') storeId: string,
+    @Param('collectionId', ParseUUIDPipe) collectionId: string,
+  ): Promise<void> {
+    await this.collections.remove(storeId, collectionId);
   }
 
   @Put(':collectionId/products/:productId')

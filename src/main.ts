@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
@@ -6,8 +8,11 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCompress from '@fastify/compress';
 import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyMultipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
 import { Env } from '@shared/config/env';
 import { buildValidationPipe } from '@shared/config/validation-pipe';
+import { MULTIPART_OPTIONS } from '@shared/media/upload';
 
 import { AppModule } from './app.module';
 
@@ -63,11 +68,28 @@ async function bootstrap(): Promise<void> {
     secret: process.env.COOKIE_SECRET,
   });
 
+  // Las fotos entran como multipart, con su propio techo; el `bodyLimit` de
+  // arriba sigue siendo para JSON.
+  await app.register(fastifyMultipart, MULTIPART_OPTIONS);
+
   const config = app.get(ConfigService<Env, true>);
 
   const apiPrefix = config.get('API_PREFIX', { infer: true });
   const port = config.get('PORT', { infer: true });
   const corsOrigins = config.get('CORS_ORIGINS', { infer: true });
+
+  // Con el driver local la propia API sirve las fotos. Con S3 las sirve el
+  // bucket (o un CDN) y esta ruta no existe.
+  if (config.get('STORAGE_DRIVER', { infer: true }) === 'local') {
+    await app.register(fastifyStatic, {
+      root: resolve(config.get('MEDIA_DIR', { infer: true })),
+      prefix: '/media/',
+      // Las claves llevan marca de tiempo y nunca se reutilizan.
+      maxAge: '365d',
+      immutable: true,
+      decorateReply: false,
+    });
+  }
 
   app.setGlobalPrefix(apiPrefix);
 

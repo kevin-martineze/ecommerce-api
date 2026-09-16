@@ -240,11 +240,4 @@ export class DeleteProductResultDto {
       'archived: la prenda está en pedidos, así que se archivó para no perder el rastro.',
   })
   result!: 'deleted' | 'archived';
-
-  @ApiProperty({
-    type: [String],
-    description:
-      'Rutas de las fotos que quedaron sin fila y hay que borrar del almacenamiento. Vacío si se archivó.',
-  })
-  storagePaths!: string[];
 }
