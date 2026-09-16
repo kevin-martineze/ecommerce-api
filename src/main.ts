@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -7,6 +7,7 @@ import fastifyCompress from '@fastify/compress';
 import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
 import { Env } from '@shared/config/env';
+import { buildValidationPipe } from '@shared/config/validation-pipe';
 
 import { AppModule } from './app.module';
 
@@ -70,17 +71,7 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix(apiPrefix);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      // `whitelist` descarta lo que no está en el DTO; `forbidNonWhitelisted`
-      // además lo rechaza con 400. Es la diferencia entre ignorar en silencio
-      // un campo que el cliente creía estar mandando y decírselo.
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: false },
-    }),
-  );
+  app.useGlobalPipes(buildValidationPipe());
 
   // `credentials` porque el refresh token viaja en cookie. La lista de orígenes
   // se valida en el entorno; vacía significa que nadie cruza, y eso está bien:
