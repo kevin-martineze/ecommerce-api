@@ -276,7 +276,10 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
       intercambiable: disco local servido por la API, o cualquier bucket
       compatible con S3. Límite de fotos por prenda según el plan. Script
       `db:import-supabase-media` copia las fotos de Supabase Storage. Ver § 11.
-- [ ] **Fase 9 — Plataforma.** Tiendas, pagos manuales, límites de plan.
+- [x] **Fase 9 — Plataforma.** `/platform/*` para quien vende el software
+      (tiendas, pagos manuales, plan, suspender), límites del plan aplicados
+      al crear, y `GET /stores/:id/subscription` para el aviso del panel.
+      Ver § 12.
 - [x] **Fase 10 — Enganche del frontend.** El frontend lee y escribe todo
       por la API y reenvía las fotos tal cual llegan del formulario. Sin
       dependencias de Supabase (ver § 10).
@@ -485,3 +488,55 @@ vieja bajo el prefijo de la tienda: así el script sabe cuáles ya migró.
 compila `import sharp from 'sharp'` a `sharp.default`, que no existe, y falla
 en tiempo de ejecución (SWC, el compilador de `nest build`, sí lo tolera: se
 notó en los tests, que usan `ts-jest`). Está activado en `tsconfig.json`.
+
+---
+
+## 12. La plataforma
+
+### Quién entra
+
+`PlatformAdminGuard` consulta `platform_admins` en cada petición, igual que
+la membresía. Ningún endpoint escribe esa tabla: se entra con
+`pnpm platform:grant-admin --email …`, con acceso a la base. Quien decide
+quién ve todas las tiendas no puede ser una petición HTTP.
+
+### RLS no se relaja para la plataforma
+
+`subscriptions` y `payments` están bajo RLS. La plataforma las lee tienda por
+tienda con `forStore`, una consulta más por fila del listado. La alternativa
+—una política que deje ver todo a un contexto "plataforma"— es exactamente el
+agujero que RLS existe para no tener. Con cientos de tiendas el listado
+necesitará paginar; hoy tiene un techo de 200.
+
+### Estados
+
+| Estado de la tienda | Quién lo pone            | Tienda pública | Panel        |
+| ------------------- | ------------------------ | -------------- | ------------ |
+| `TRIAL`             | el registro              | vende          | completo     |
+| `ACTIVE`            | un pago, o la plataforma | vende          | completo     |
+| `PAST_DUE`          | `reconcile`              | vende          | completo     |
+| `SUSPENDED`         | la plataforma, a mano    | 404            | solo lectura |
+
+`PAST_DUE` solo avisa: cortar la venta de una tienda es una decisión de una
+persona, no de un cron. Un pago devuelve a `ACTIVE` una tienda en prueba o
+vencida, pero no una suspendida: suspender fue una decisión y reactivar es
+otra.
+
+Un pago es un asiento que no se edita. El período vigente se extiende hasta el
+fin del pago si ese fin es posterior; un pago atrasado no lo acorta.
+
+### El vencimiento
+
+No hay reloj dentro de la API. `reconcile` marca como vencidas las pruebas
+terminadas y los períodos pasados; se dispara una vez al día con
+`pnpm platform:reconcile` (cron del servidor) o desde la consola. Un mismo
+criterio (`isOverdue`) decide el cron y el filtro "vencidas" del listado.
+
+### Límites del plan
+
+`assertWithinPlan` se llama donde se crea lo que el plan acota: prendas,
+fotos por prenda y pedidos del mes (este último con las variantes ya
+bloqueadas, para que dos pedidos simultáneos no pasen los dos como el último).
+Responde 403 con `error: plan_limit` y `details: { limit, max }`, para que el
+panel lo distinga de un permiso denegado. Bajar de plan no borra nada: lo que
+sobra se queda, y solo se bloquea crear más.
