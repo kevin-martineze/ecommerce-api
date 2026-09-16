@@ -7,6 +7,7 @@ import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
 import { AuthModule } from '@modules/auth/auth.module';
 import { CatalogModule } from '@modules/catalog/catalog.module';
 import { HealthModule } from '@modules/health/health.module';
+import { StorefrontModule } from '@modules/storefront/storefront.module';
 import { PrismaModule } from '@db/prisma.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { PrismaModule } from '@db/prisma.module';
     PrismaModule,
     AuthModule,
     CatalogModule,
+    StorefrontModule,
     HealthModule,
   ],
   providers: [
