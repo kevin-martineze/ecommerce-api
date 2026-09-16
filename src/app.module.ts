@@ -6,6 +6,7 @@ import { validateEnv } from '@shared/config/env';
 import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
 import { AuthModule } from '@modules/auth/auth.module';
 import { CatalogModule } from '@modules/catalog/catalog.module';
+import { CommerceModule } from '@modules/commerce/commerce.module';
 import { ContentModule } from '@modules/content/content.module';
 import { HealthModule } from '@modules/health/health.module';
 import { StorefrontModule } from '@modules/storefront/storefront.module';
@@ -35,6 +36,7 @@ import { PrismaModule } from '@db/prisma.module';
     AuthModule,
     CatalogModule,
     ContentModule,
+    CommerceModule,
     StorefrontModule,
     HealthModule,
   ],
