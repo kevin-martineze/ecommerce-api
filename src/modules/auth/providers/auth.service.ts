@@ -178,6 +178,16 @@ export class AuthService {
       });
     }
 
+    // Las cuentas migradas desde Supabase llegan con bcrypt. Este es el único
+    // momento en que se tiene la contraseña en claro, así que se aprovecha para
+    // dejarla en argon2id. Ver PasswordService.
+    if (this.passwords.needsRehash(user.passwordHash)) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await this.passwords.hash(dto.password) },
+      });
+    }
+
     const stores = toSessionStores(user.memberships);
     const activeStoreId = stores[0]?.id ?? null;
 
