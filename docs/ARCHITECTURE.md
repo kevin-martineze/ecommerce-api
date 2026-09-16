@@ -271,12 +271,15 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
       avisos de reposición, resumen del panel, ajustes, bloques de portada y
       colecciones. Las fotos se registran por un endpoint puente mientras la
       subida siga en el frontend.
-- [ ] **Fase 8 — Medios.** `sharp` a WebP, subida a S3/R2.
+- [x] **Fase 8 — Medios.** La API recibe la foto por multipart, la convierte
+      con `sharp` (tres anchos WebP + LQIP) y la guarda en un almacenamiento
+      intercambiable: disco local servido por la API, o cualquier bucket
+      compatible con S3. Límite de fotos por prenda según el plan. Script
+      `db:import-supabase-media` copia las fotos de Supabase Storage. Ver § 11.
 - [ ] **Fase 9 — Plataforma.** Tiendas, pagos manuales, límites de plan.
-- [ ] **Fase 10 — Enganche del frontend.** Cliente tipado en SvelteKit; se
-      retiran `supabase-js` y `@supabase/ssr`. _Hecho salvo las fotos: el
-      frontend ya lee y escribe todo por la API (ver § 10). `supabase-js`
-      queda para Storage hasta la fase 8; `@supabase/ssr` ya no se usa._
+- [x] **Fase 10 — Enganche del frontend.** El frontend lee y escribe todo
+      por la API y reenvía las fotos tal cual llegan del formulario. Sin
+      dependencias de Supabase (ver § 10).
 
 ---
 
@@ -437,3 +440,48 @@ un JWT legible.
 `localhost` a `::1` antes que a IPv4, y la API escucha en IPv4: con `localhost`
 la petición muere con ECONNREFUSED y el login responde «No pudimos conectar con
 el servidor», que parece un problema de credenciales y no lo es.
+
+---
+
+## 11. Las fotos
+
+### Por qué un almacenamiento intercambiable
+
+`MediaStorage` es una clase abstracta con dos implementaciones: disco local y
+S3. Los servicios piden `MediaStorage` y el entorno decide cuál hay detrás
+(`STORAGE_DRIVER`). El driver local existe porque en desarrollo y en un
+despliegue de un solo servidor un bucket es fricción sin beneficio; el S3
+existe porque con dos instancias cada una tendría su disco, y una foto subida
+por una no existiría para la otra. R2, S3 y MinIO hablan el mismo protocolo,
+así que una implementación cubre las tres; el adaptador S3 se prueba contra
+MinIO (`test/storage-s3.e2e-spec.ts`, se salta sin credenciales).
+
+### El orden de las operaciones
+
+Una foto son tres archivos y una fila, y no hay transacción que abarque los
+dos mundos. El orden elegido hace que ningún fallo deje una fila apuntando a
+un archivo que no existe:
+
+- **Subir:** convertir (fuera de la transacción, porque `sharp` tarda y no
+  hay razón para tener filas bloqueadas), comprobar, escribir los archivos,
+  crear la fila. Si crear la fila falla, se borran los archivos.
+- **Quitar:** borrar la fila, confirmar, y después borrar los archivos. Si
+  borrar los archivos falla, queda un huérfano —espacio perdido— que es mucho
+  mejor que lo contrario.
+- **Reemplazar la portada:** la vieja se borra al final, con la nueva ya
+  guardada.
+
+### Claves
+
+`stores/<storeId>/<carpeta>/<slug>/<marca>-<tamaño>.webp`. La tienda primero,
+para que un bucket compartido quede ordenado por inquilino. La marca de tiempo
+hace que una clave nunca se reutilice, y por eso el caché puede ser inmutable
+(`max-age` de un año). Las fotos migradas desde Supabase conservan su ruta
+vieja bajo el prefijo de la tienda: así el script sabe cuáles ya migró.
+
+### Una trampa de compilación
+
+`sharp` exporta con `module.exports =`. Sin `esModuleInterop`, TypeScript
+compila `import sharp from 'sharp'` a `sharp.default`, que no existe, y falla
+en tiempo de ejecución (SWC, el compilador de `nest build`, sí lo tolera: se
+notó en los tests, que usan `ts-jest`). Está activado en `tsconfig.json`.
