@@ -58,6 +58,21 @@ visitante sin darse cuenta.
 La superficie pública usa el **slug** y no el UUID, porque forma parte de una
 URL que se comparte por WhatsApp y porque así el CDN puede cachear por URL.
 
+### El límite por IP, detrás del frontend
+
+El frontend llama a esta API desde su servidor, así que sin ayuda todas las
+visitantes llegan con la IP del servidor de la tienda. Un límite por IP sobre
+las lecturas públicas terminaría frenando a la tienda entera, por eso esas
+rutas llevan `@SkipThrottle`. Las escrituras públicas (aviso de reposición,
+pedidos) y el login sí conservan su límite, y para que cuente la IP de la
+visitante el frontend la reenvía en `X-Forwarded-For` (el adaptador arranca con
+`trustProxy`).
+
+Ese header lo puede falsificar cualquiera que llegue a la API directo. La
+defensa real es que la API no sea alcanzable desde internet más que por el
+frontend: red privada o un secreto compartido entre los dos. Queda pendiente
+para el despliegue.
+
 ---
 
 ## 4. Aislamiento entre inquilinos: cuatro capas
@@ -137,7 +152,26 @@ Tres detalles sostienen la garantía, y los tres están comentados en
 RLS es la red, no la regla. El filtro explícito por `storeId` sigue siendo
 obligatorio en cada consulta, y un test recorre los servicios y falla el build
 si alguno consulta un modelo con `storeId` sin incluirlo. Sigue el patrón
-`.arch-spec.ts` que ya se usa en `micro-ehr`.
+`.arch-spec.ts` que ya se usa en `micro-ehr` y vive en
+`src/prisma/tenant-scope.arch-spec.ts`.
+
+El test lee los modelos de tienda del schema, no de una lista propia, así que
+un modelo nuevo queda cubierto solo. Es textual: el filtro tiene que estar
+escrito en la llamada misma (`findMany({ where: { storeId, … } })`), no armado
+en una variable aparte.
+
+### Lo que RLS no cubre: las claves foráneas
+
+Postgres verifica las claves foráneas **por fuera** de RLS, para que la
+integridad no dependa de quién mira. Consecuencia: la base acepta un producto
+de la tienda A cuya `category_id` apunte a una categoría de la tienda B. Leído
+después con el contexto de A, ese padre "no existe", y si la relación es
+obligatoria —el color de una variante— la consulta entera se rompe.
+
+Por eso todo id de otra tabla que entra por un DTO se verifica contra la tienda
+antes de escribirse (`shared/tenancy/store-references.ts`). Una
+clave foránea compuesta `(store_id, id)` lo cerraría en la base; queda como
+mejora.
 
 ---
 
@@ -218,14 +252,31 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
 - [x] **Fase 3 — Auth.** Registro de tienda, login, refresh con rotación y
       detección de reuso, `switch-store`, `JwtAuthGuard` y `StoreRolesGuard`.
       Integrada con el panel de SvelteKit: ver § 10.
-- [ ] **Fase 4 — Catálogo del panel.**
-- [ ] **Fase 5 — Catálogo público.**
-- [ ] **Fase 6 — Pedidos.**
-- [ ] **Fase 7 — Cupones, envíos y ajustes.**
+- [x] **Fase 4 — Catálogo del panel.** Colores, tallas, categorías, prendas,
+      matriz de variantes e inventario bajo `/stores/:storeId/*`. Lo que está
+      en uso se oculta o archiva en vez de borrarse. Test de arquitectura del
+      filtro por `storeId` y e2e con dos tiendas. Las fotos quedan para la
+      fase 8.
+- [x] **Fase 5 — Catálogo público.** `/public/:storeSlug/*`: layout, portada,
+      listado con filtros, facetas, ficha, relacionadas, favoritos, colecciones,
+      sitemap y aviso de reposición. Replica las políticas de lectura de
+      Supabase (solo lo publicado y activo). Probado contra la tienda importada.
+- [x] **Fase 6 — Pedidos.** Cotización del carrito, creación con bloqueo
+      ordenado de variantes, revalidación de stock bajo lock, número por
+      tienda, cupón bajo lock e `Idempotency-Key`. Vista pública con token,
+      WhatsApp abierto, panel con filtros y cancelación que devuelve el stock
+      una sola vez. Un pedido cancelado no se reabre. Reglas de precio en
+      `shared/commerce/pricing.ts`, compartidas por cotización y pedido.
+- [x] **Fase 7 — Cupones, envíos, ajustes y contenido.** Cupones, zonas,
+      avisos de reposición, resumen del panel, ajustes, bloques de portada y
+      colecciones. Las fotos se registran por un endpoint puente mientras la
+      subida siga en el frontend.
 - [ ] **Fase 8 — Medios.** `sharp` a WebP, subida a S3/R2.
 - [ ] **Fase 9 — Plataforma.** Tiendas, pagos manuales, límites de plan.
 - [ ] **Fase 10 — Enganche del frontend.** Cliente tipado en SvelteKit; se
-      retiran `supabase-js` y `@supabase/ssr`.
+      retiran `supabase-js` y `@supabase/ssr`. _Hecho salvo las fotos: el
+      frontend ya lee y escribe todo por la API (ver § 10). `supabase-js`
+      queda para Storage hasta la fase 8; `@supabase/ssr` ya no se usa._
 
 ---
 
@@ -259,15 +310,15 @@ sin filtrar justamente lo que se quiere ocultar— pero significa que el código
 de aplicación **no puede** interpretar "0 filas afectadas" como "ya estaba
 así". Tiene que tratarlo como "no existe o no es mío", y responder 404.
 
-Esta comprobación se hizo a mano una vez. Convertirla en `test/rls.e2e-spec.ts`,
-que además recorra las tablas con columna `store_id` y falle si alguna no tiene
-política, es parte de la fase 3.
+Esta comprobación se hizo a mano una vez y ahora vive en `test/rls.e2e-spec.ts`,
+que además recorre las tablas con columna `store_id` y falla si alguna no tiene
+RLS activado, forzado y con política.
 
 ---
 
 ## 10. Cómo se integra con el frontend
 
-El frontend SvelteKit (`Projects/personal/tienda-ropa`) consume esta API
+El frontend SvelteKit (`personal/shopping-sas`, package `tienda-ropa`) consume esta API
 **servidor contra servidor**: el navegador de la clienta nunca la llama.
 
 ### Quién pone la cookie
@@ -277,9 +328,11 @@ Tiene que ser así: la API vive en otro dominio, y una cookie suya no llegaría
 al navegador. Quien pone la cookie de sesión —httpOnly, en su propio dominio—
 es SvelteKit, con lo que recibe de aquí.
 
-El resultado es que el navegador solo ve una cookie opaca. El access token y el
-refresh token no pisan el cliente en ningún momento, ni siquiera dentro del
-HTML serializado.
+El resultado es que el navegador solo ve una cookie opaca. La cookie va
+**cifrada** con AES-256-GCM (`SESSION_SECRET` del frontend) y no solo firmada:
+una firma impediría falsificarla pero dejaría los tokens legibles para quien la
+vea. El access token y el refresh token no aparecen ni en la cookie ni dentro
+del HTML serializado.
 
 ### Dónde se renueva la sesión
 
@@ -289,14 +342,76 @@ actualizada antes de que nadie use el token.
 
 Si el refresh falla, la sesión se borra en lugar de arrastrarse. Un refresh
 rechazado significa que el token fue revocado, que expiró, o que la API detectó
-reuso — en los tres casos lo correcto es volver a entrar, no reintentar.
+reuso — en los tres casos lo correcto es volver a entrar, no reintentar. Si la
+API no respondió, la cookie se conserva: el refresh token sigue siendo bueno.
+
+El frontend se despliega en Vercel, y dos peticiones casi simultáneas con la
+misma cookie vencida pueden refrescar en instancias distintas con el mismo
+token. Por eso `TokenService.rotate` acepta un token recién rotado durante 30
+segundos (`ROTATION_GRACE_MS`) sin tomarlo como reuso. Fuera de esa ventana, o
+si la sesión sucesora ya se cerró, sigue revocando toda la cadena. Lo prueba
+`test/auth-refresh.e2e-spec.ts`.
+
+### La membresía, en cada carga del panel
+
+`requireAdmin` llama a `GET /auth/me` en cada carga del panel y comprueba que la
+tienda de la sesión siga entre las de la cuenta. Es el equivalente de la
+consulta a `profiles` de la versión con Supabase: quitarle el acceso a alguien
+surte efecto en la siguiente página, no cuando venza su token.
 
 ### Migración por rebanadas
 
-La tienda no se migra por capas sino por funciones completas. Hoy la
-autenticación ya es de esta API mientras el catálogo y los pedidos siguen en
-Supabase, y las dos cosas conviven sin romperse. Cada rebanada que se migra
-deja la tienda funcionando; Supabase se apaga cuando no quede ninguna.
+El plan era migrar por funciones completas, conviviendo con Supabase. Funcionó
+para la autenticación, que no comparte datos con nada. Para el resto no: el
+catálogo, el carrito, los pedidos, los cupones y el contenido leen y escriben
+las mismas filas. Mover solo el catálogo habría dejado a los pedidos
+descontando stock en una base mientras la dueña editaba precios en la otra.
+
+Por eso, después del login, el frontend pasó a la API **de una sola vez**
+(2026-09-15, rama `feature/integracion-api`), con los datos ya copiados. Desde
+entonces toda lectura y escritura de la tienda va por esta API. Supabase queda
+solo como almacenamiento de fotos hasta la fase 8.
+
+En el frontend:
+
+- **Tienda pública** con `STORE_SLUG`: todavía sirve a una sola tienda; la
+  resolución por subdominio es trabajo pendiente.
+- **Traducción en un solo lugar:** `$lib/server/api/*` lee cada respuesta con
+  zod y la traduce a los tipos de dominio que ya usaban las páginas, así el
+  cambio casi no tocó componentes.
+- **Form actions del panel:** SvelteKit no ejecuta el `load` del layout en las
+  form actions, así que cada una exige la sesión por su cuenta (`panelContext`).
+  Con Supabase y la llave de servicio, esas acciones no verificaban sesión.
+- **IP de la visitante:** viaja en `X-Forwarded-For` en login, refresh, pedidos
+  y avisos, para que el límite por IP cuente a cada visitante (§ 3).
+- **Idempotencia del checkout:** la clave sale del contenido del envío en
+  ventanas de dos minutos, porque el formulario del carrito no genera una.
+
+### Migración de los datos
+
+`scripts/import-supabase.ts` (`pnpm db:import-supabase`) copia la tienda de
+Supabase a una tienda de esta API. Se corre primero con `--dry-run`, que hace
+todo —incluidos los inserts y la comparación de conteos— y deshace al final.
+
+- **Supabase no se toca:** la lectura va en una transacción `read only` que
+  Postgres hace cumplir, no la disciplina del script.
+- **Todo o nada:** la escritura es una transacción; si una fila falla o los
+  conteos no coinciden con el origen, no queda nada.
+- **Los ids se conservan:** fotos, variantes y pedidos siguen apuntando a lo
+  mismo, y `--replace` repite la importación con el mismo resultado.
+- **Antes de escribir se revisan las reglas que Supabase no exigía** (total del
+  pedido, línea = precio × cantidad, ventana del cupón, formato del tono) y se
+  devuelve la lista completa de lo que falla, no el primer error de Postgres.
+- **Las contraseñas se copian como están.** Supabase Auth guarda bcrypt;
+  `PasswordService` lo acepta y `AuthService.login` lo reemplaza por argon2id en
+  el primer login correcto, que es el único momento en que se tiene la
+  contraseña en claro. bcrypt se lee, nunca se escribe.
+- **Los números de pedido siguen desde el último.** En Supabase salían de una
+  secuencia global que empezó en 1000; acá son por tienda, y repetir un número
+  que una clienta ya tiene en su chat sería confuso.
+
+El origen tiene que ser el pooler de Supabase: la conexión directa solo tiene
+IPv6.
 
 ### Verificado de punta a punta
 
@@ -309,6 +424,12 @@ deja la tienda funcionando; Supabase se apaga cuando no quede ninguna.
 | Tokens en el HTML servido        | ninguno                                                   |
 | `POST /admin/logout`             | 303 al login, y el refresh token queda revocado en la API |
 | Tienda pública durante todo esto | sigue respondiendo 200                                    |
+
+La primera versión de esta integración se perdió sin subir al cambiar de
+equipo. Se rehízo y se volvió a verificar el 2026-09-14 (rama
+`feature/integracion-api` del frontend), con dos comprobaciones más: un
+`redirectTo` externo en el login termina en `/admin`, y la cookie no contiene
+un JWT legible.
 
 ### Una trampa de esta máquina
 
