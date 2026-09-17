@@ -540,3 +540,55 @@ bloqueadas, para que dos pedidos simultáneos no pasen los dos como el último).
 Responde 403 con `error: plan_limit` y `details: { limit, max }`, para que el
 panel lo distinga de un permiso denegado. Bajar de plan no borra nada: lo que
 sobra se queda, y solo se bloquea crear más.
+
+---
+
+## 13. Cuentas y equipo
+
+### Enlaces por correo
+
+Recuperar la contraseña y aceptar una invitación funcionan con un enlace de un
+solo uso: 32 bytes aleatorios, y en la base solo su SHA-256 (la misma razón
+que `refresh_tokens`). La base del enlace sale de `FRONTEND_URL`, nunca del
+`Host` de la petición: armarlo con el host que manda el cliente deja que un
+atacante pida el enlace de otra cuenta y lo reciba apuntando a su dominio.
+
+El correo es intercambiable como las fotos: `MAIL_DRIVER=log` lo escribe en el
+log de la API (desarrollo, y los e2e lo leen de memoria) y `smtp` lo manda de
+verdad.
+
+### Recuperar la contraseña
+
+- `forgot` responde 204 exista o no la cuenta, y el correo sale sin esperarlo:
+  esperar haría que una cuenta real tarde lo que tarda el SMTP y una
+  inexistente nada, y el cronómetro volvería a enumerar cuentas.
+- Solo vale el último enlace pedido, por una hora.
+- `reset` marca el enlace como usado en la misma sentencia que lo comprueba
+  (dos envíos simultáneos no pasan los dos), levanta el bloqueo por intentos y
+  cierra **todas** las sesiones: quien recupera suele hacerlo porque alguien
+  más entró.
+- `change` exige la contraseña actual y cierra las demás sesiones, no la que
+  hizo el cambio.
+
+### Invitaciones
+
+`store_invitations` está bajo RLS: pertenece a la tienda. Aceptar llega sin
+contexto, así que el enlace lleva el `storeId` delante del secreto
+(`<storeId>.<secreto>`): con él se abre el contexto y se busca por el hash.
+El `storeId` no es secreto; el secreto sí.
+
+- Solo la dueña invita, cambia roles y quita miembros (`@Roles('OWNER')`).
+- Una invitación nueva al mismo correo anula la pendiente.
+- Si el correo ya tiene cuenta, se acepta con **su** contraseña, por el mismo
+  camino del login (bloqueo incluido): el enlace prueba acceso al correo, no a
+  la cuenta. Si no, se crea la cuenta ahí.
+- Cuenta nueva, invitación usada y membresía van en una transacción: una
+  invitación que otra pestaña aceptó un instante antes no deja una cuenta
+  suelta.
+
+### Nunca sin dueña
+
+Degradar o quitar a una dueña bloquea las filas de todas las dueñas de la
+tienda antes de contarlas. Dos dueñas que se degradan la una a la otra a la
+vez se serializan, y la segunda ve el resultado de la primera. Quitar a alguien
+además cierra sus sesiones atadas a esa tienda.
