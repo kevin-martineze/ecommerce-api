@@ -284,6 +284,22 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
       por la API y reenvía las fotos tal cual llegan del formulario. Sin
       dependencias de Supabase (ver § 10).
 
+### Pendiente
+
+- **Dominios propios.** `stores.custom_domain` existe y el plan Pro lo
+  incluye, pero ni la API resuelve una tienda por dominio ni el frontend lo
+  pide. Hace falta un `GET /public/by-domain/:host` y, en el despliegue, el
+  certificado de cada dominio.
+- **El access token sobrevive a su sesión.** Restablecer o cambiar la
+  contraseña cierra los refresh tokens, pero un access token ya emitido
+  sigue valiendo hasta su vencimiento (15 minutos). Cerrarlo antes exige
+  que el guard compare el `iat` con una marca por cuenta
+  (`sessions_valid_after`), una consulta más por petición.
+- **Cobro automático.** Los pagos se registran a mano desde la consola.
+- **API no expuesta.** El límite por IP confía en `X-Forwarded-For` del
+  frontend (§ 3): en producción la API tiene que quedar detrás de una red
+  privada o de un secreto compartido.
+
 ---
 
 ## 9. El aislamiento, verificado contra la base
@@ -380,8 +396,13 @@ solo como almacenamiento de fotos hasta la fase 8.
 
 En el frontend:
 
-- **Tienda pública** con `STORE_SLUG`: todavía sirve a una sola tienda; la
-  resolución por subdominio es trabajo pendiente.
+- **Tienda pública por host:** cada tienda es un subdominio de
+  `STORE_ROOT_DOMAIN` (`boutique.mitienda.com`); el dominio raíz sirve
+  `STORE_SLUG` o, sin ella, lleva a `/registro`. El panel opera sobre la
+  tienda de la sesión y se cambia solo a la del subdominio si la cuenta es
+  miembro. Los dominios propios (`custom_domain`) todavía no se resuelven.
+- **Sesión sin tienda:** la de quien solo administra la plataforma. Entra a
+  `/plataforma`, nunca al panel.
 - **Traducción en un solo lugar:** `$lib/server/api/*` lee cada respuesta con
   zod y la traduce a los tipos de dominio que ya usaban las páginas, así el
   cambio casi no tocó componentes.
