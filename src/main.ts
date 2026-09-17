@@ -10,6 +10,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import { FastifyInstance } from 'fastify';
 import { Env } from '@shared/config/env';
 import { buildValidationPipe } from '@shared/config/validation-pipe';
 import { MULTIPART_OPTIONS } from '@shared/media/upload';
@@ -81,13 +82,27 @@ async function bootstrap(): Promise<void> {
   // Con el driver local la propia API sirve las fotos. Con S3 las sirve el
   // bucket (o un CDN) y esta ruta no existe.
   if (config.get('STORAGE_DRIVER', { infer: true }) === 'local') {
-    await app.register(fastifyStatic, {
-      root: resolve(config.get('MEDIA_DIR', { infer: true })),
-      prefix: '/media/',
-      // Las claves llevan marca de tiempo y nunca se reutilizan.
-      maxAge: '365d',
-      immutable: true,
-      decorateReply: false,
+    const mediaRoot = resolve(config.get('MEDIA_DIR', { infer: true }));
+
+    await app.register(async (media: FastifyInstance) => {
+      // Helmet pone `Cross-Origin-Resource-Policy: same-origin` en todo, y con
+      // eso el navegador se niega a pintar una foto de la API dentro de la
+      // tienda, que vive en otro origen. Solo las fotos se abren: el hook vive
+      // en este contexto y no toca al resto de la API.
+      media.addHook('onSend', async (_request, reply, payload) => {
+        reply.header('cross-origin-resource-policy', 'cross-origin');
+
+        return payload;
+      });
+
+      await media.register(fastifyStatic, {
+        root: mediaRoot,
+        prefix: '/media/',
+        // Las claves llevan marca de tiempo y nunca se reutilizan.
+        maxAge: '365d',
+        immutable: true,
+        decorateReply: false,
+      });
     });
   }
 
