@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from '@shared/config/env';
 import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
+import { MailModule } from '@shared/mail/mail.module';
 import { StorageModule } from '@shared/storage/storage.module';
 import { AuthModule } from '@modules/auth/auth.module';
 import { CatalogModule } from '@modules/catalog/catalog.module';
@@ -13,6 +14,7 @@ import { HealthModule } from '@modules/health/health.module';
 import { OrdersModule } from '@modules/orders/orders.module';
 import { PlatformModule } from '@modules/platform/platform.module';
 import { StorefrontModule } from '@modules/storefront/storefront.module';
+import { TeamModule } from '@modules/team/team.module';
 import { PrismaModule } from '@db/prisma.module';
 
 @Module({
@@ -37,6 +39,7 @@ import { PrismaModule } from '@db/prisma.module';
 
     PrismaModule,
     StorageModule,
+    MailModule,
     AuthModule,
     CatalogModule,
     ContentModule,
@@ -44,6 +47,7 @@ import { PrismaModule } from '@db/prisma.module';
     StorefrontModule,
     OrdersModule,
     PlatformModule,
+    TeamModule,
     HealthModule,
   ],
   providers: [

@@ -199,10 +199,26 @@ export class TokenService {
     });
   }
 
-  /** Cierra TODAS las sesiones de una cuenta. Cambio de contraseña, reuso detectado. */
-  async revokeAllForUser(userId: string): Promise<void> {
+  /**
+   * Cierra TODAS las sesiones de una cuenta: reuso detectado, contraseña
+   * restablecida. Con `keepToken`, esa sesión sigue viva (cambio de contraseña
+   * desde la propia sesión).
+   */
+  async revokeAllForUser(userId: string, keepToken?: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
+      where: {
+        userId,
+        revokedAt: null,
+        ...(keepToken ? { tokenHash: { not: this.hashToken(keepToken) } } : {}),
+      },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  /** Cierra las sesiones de una cuenta atadas a una tienda. Al quitarla del equipo. */
+  async revokeForStore(userId: string, storeId: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, storeId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
   }

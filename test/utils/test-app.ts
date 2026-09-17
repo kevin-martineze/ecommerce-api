@@ -8,6 +8,8 @@ import { Test } from '@nestjs/testing';
 import fastifyMultipart from '@fastify/multipart';
 import { Client } from 'pg';
 import { buildValidationPipe } from '@shared/config/validation-pipe';
+import { LogMailer } from '@shared/mail/log-mailer';
+import { Mailer } from '@shared/mail/mailer';
 import { MULTIPART_OPTIONS } from '@shared/media/upload';
 
 import { AppModule } from '../../src/app.module';
@@ -69,6 +71,10 @@ export interface TestApp {
   register(label: string): Promise<Session>;
   /** Directorio donde el driver local deja las fotos durante esta prueba. */
   mediaDir: string;
+  /** Texto del último correo enviado a esa dirección, o null. */
+  lastMailTo(email: string): string | null;
+  /** Un correo único de esta corrida, que `close` borra si llega a tener cuenta. */
+  email(label: string): string;
   /** Conexión con el rol dueño, para preparar estados que la API no deja crear. */
   withOwner<T>(work: (client: Client) => Promise<T>): Promise<T>;
   close(): Promise<void>;
@@ -168,11 +174,25 @@ export async function startTestApp(): Promise<TestApp> {
     return { status: response.statusCode, body };
   };
 
+  const mailer = app.get(Mailer);
+
   return {
     call,
     upload,
     withOwner,
     mediaDir,
+
+    email(label: string): string {
+      const email = `e2e-${label}-${run}@tienda.test`;
+
+      emails.push(email);
+
+      return email;
+    },
+
+    lastMailTo(email: string): string | null {
+      return mailer instanceof LogMailer ? (mailer.lastTo(email)?.text ?? null) : null;
+    },
 
     async register(label: string): Promise<Session> {
       const email = `e2e-${label}-${run}@tienda.test`;

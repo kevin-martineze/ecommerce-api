@@ -7,7 +7,11 @@ import {
 } from '@nestjs/common';
 import { LoginDto } from '@shared/dtos/auth/login.dto';
 import { RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
-import { SessionResponseDto, SessionStoreDto } from '@shared/dtos/auth/session-response.dto';
+import {
+  MeResponseDto,
+  SessionResponseDto,
+  SessionStoreDto,
+} from '@shared/dtos/auth/session-response.dto';
 import { PrismaService } from '@db/prisma.service';
 
 import { PasswordService } from './password.service';
@@ -36,7 +40,7 @@ const BASE_COLORS = [
 /** Días de prueba antes del primer cobro. */
 const TRIAL_DAYS = 14;
 
-interface RequestContext {
+export interface RequestContext {
   userAgent?: string | null;
   ip?: string | null;
 }
@@ -145,7 +149,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { memberships: { include: { store: true } } },
+      include: { memberships: { include: { store: true }, orderBy: { createdAt: 'asc' } } },
     });
 
     if (!user || !user.passwordHash) {
@@ -248,16 +252,33 @@ export class AuthService {
     };
   }
 
-  async me(
-    userId: string,
-  ): Promise<
-    Omit<SessionResponseDto, 'accessToken' | 'refreshToken' | 'expiresIn' | 'activeStoreId'>
-  > {
+  async me(userId: string): Promise<MeResponseDto> {
     const user = await this.requireUserWithStores(userId);
 
     return {
       user: { id: user.id, email: user.email, fullName: user.fullName },
       stores: toSessionStores(user.memberships),
+      isPlatformAdmin: user.platformAdmin !== null,
+    };
+  }
+
+  /**
+   * Emite una sesión para una cuenta ya verificada por otro camino (aceptar
+   * una invitación). Nunca debe llamarse sin haber probado antes la identidad.
+   */
+  async sessionFor(
+    userId: string,
+    storeId: string | null,
+    context: RequestContext = {},
+  ): Promise<SessionResponseDto> {
+    const user = await this.requireUserWithStores(userId);
+    const issued = await this.tokens.issue(user.id, user.email, storeId, context);
+
+    return {
+      ...issued,
+      user: { id: user.id, email: user.email, fullName: user.fullName },
+      stores: toSessionStores(user.memberships),
+      activeStoreId: storeId,
     };
   }
 
@@ -268,7 +289,10 @@ export class AuthService {
   private async requireUserWithStores(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { memberships: { include: { store: true } } },
+      include: {
+        memberships: { include: { store: true }, orderBy: { createdAt: 'asc' } },
+        platformAdmin: { select: { userId: true } },
+      },
     });
 
     if (!user) {

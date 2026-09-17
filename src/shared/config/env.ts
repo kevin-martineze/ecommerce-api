@@ -82,13 +82,41 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((value) => value === 'true' || value === '1'),
+
+  /**
+   * Correo saliente.
+   *
+   * `log` escribe el mensaje en el log (con el enlace) y guarda los últimos en
+   * memoria para los tests: sirve en desarrollo, donde nadie quiere un SMTP.
+   * `smtp` es cualquier proveedor que hable SMTP (Resend, SES, Postmark…).
+   */
+  MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
+  /** `smtp://usuario:clave@host:587` o `smtps://…:465`. Solo con `MAIL_DRIVER=smtp`. */
+  SMTP_URL: z.string().url().optional(),
+  MAIL_FROM: z.string().min(3).default('Tienda <no-responder@tienda.local>'),
+
+  /**
+   * Base de los enlaces que viajan por correo (recuperar contraseña, aceptar
+   * invitación). Sale del entorno y nunca de la petición: armar el enlace con
+   * el `Host` que manda el cliente deja que un atacante se envíe a sí mismo el
+   * enlace de otra cuenta.
+   */
+  FRONTEND_URL: z.string().url().default('http://localhost:5173').transform(stripTrailingSlash),
 });
 
 /**
- * Lo que zod no puede expresar campo a campo: las variables de S3 son
- * opcionales, salvo que el driver sea S3.
+ * Lo que zod no puede expresar campo a campo: las variables de S3 y SMTP son
+ * opcionales, salvo que su driver esté elegido.
  */
 const envSchemaWithRules = envSchema.superRefine((env, ctx) => {
+  if (env.MAIL_DRIVER === 'smtp' && !env.SMTP_URL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SMTP_URL'],
+      message: 'Obligatoria cuando MAIL_DRIVER=smtp.',
+    });
+  }
+
   if (env.STORAGE_DRIVER !== 's3') {
     return;
   }

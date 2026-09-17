@@ -108,6 +108,7 @@ model Store {
   orderItems      OrderItem[]
   restockRequests RestockRequest[]
   homeHighlights  HomeHighlight[]
+  invitations     StoreInvitation[]
 
   @@map("stores")
 }
@@ -179,12 +180,62 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships   StoreMember[]
-  platformAdmin PlatformAdmin?
-  refreshTokens RefreshToken[]
-  payments      Payment[]
+  memberships         StoreMember[]
+  platformAdmin       PlatformAdmin?
+  refreshTokens       RefreshToken[]
+  payments            Payment[]
+  passwordResetTokens PasswordResetToken[]
+  sentInvitations     StoreInvitation[]
 
   @@map("users")
+}
+
+/// Enlace de un solo uso para fijar una contraseña nueva sin conocer la actual.
+///
+/// Sin RLS, como `refresh_tokens`: pertenece a una cuenta, no a una tienda, y
+/// se busca antes de que exista contexto. Se guarda el SHA-256 del enlace,
+/// nunca el enlace: quien se lleve una copia de la tabla no puede usarlo.
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  ip        String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Invitación a formar parte de una tienda.
+///
+/// Bajo RLS: pertenece a la tienda. El enlace lleva el `storeId` delante del
+/// secreto (`<storeId>.<secreto>`) para poder abrir el contexto de la tienda
+/// antes de buscarla; el secreto es lo único que da acceso.
+///
+/// El correo no tiene por qué tener cuenta todavía: aceptar la crea.
+model StoreInvitation {
+  id          String     @id @default(uuid()) @db.Uuid
+  storeId     String     @map("store_id") @db.Uuid
+  email       String
+  role        MemberRole @default(STAFF)
+  tokenHash   String     @unique @map("token_hash")
+  invitedById String?    @map("invited_by_id") @db.Uuid
+  expiresAt   DateTime   @map("expires_at")
+  acceptedAt  DateTime?  @map("accepted_at")
+  revokedAt   DateTime?  @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  invitedBy User? @relation(fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([storeId, email])
+  @@map("store_invitations")
 }
 
 /// Qué puede hacer alguien dentro de una tienda.
@@ -564,8 +615,8 @@ model Collection {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  store       Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  items       CollectionProduct[]
+  store           Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items           CollectionProduct[]
   heroForSettings StoreSettings[]
 
   @@unique([storeId, slug])
@@ -705,7 +756,7 @@ model Order {
   customerAddress String? @map("customer_address")
   customerNotes   String? @map("customer_notes")
 
-  shippingZoneId String? @map("shipping_zone_id") @db.Uuid
+  shippingZoneId   String? @map("shipping_zone_id") @db.Uuid
   /// Nombre de la zona congelado al momento del pedido: si luego se renombra o
   /// se borra, el pedido sigue diciendo lo que la clienta vio.
   shippingZoneName String? @map("shipping_zone_name")
@@ -759,10 +810,10 @@ model OrderItem {
   variantId String? @map("variant_id") @db.Uuid
   productId String? @map("product_id") @db.Uuid
 
-  productName String @map("product_name")
-  productSlug String @map("product_slug")
-  colorName   String @map("color_name")
-  sizeLabel   String @map("size_label")
+  productName String  @map("product_name")
+  productSlug String  @map("product_slug")
+  colorName   String  @map("color_name")
+  sizeLabel   String  @map("size_label")
   sku         String?
 
   unitPrice Int @map("unit_price")
