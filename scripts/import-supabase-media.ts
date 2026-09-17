@@ -4,11 +4,9 @@ import { parseArgs } from 'node:util';
 
 import { Client } from 'pg';
 
-import { Env, validateEnv } from '../src/shared/config/env';
+import { validateEnv } from '../src/shared/config/env';
 import { IMAGE_SIZES, imageObjectKey } from '../src/shared/media/images';
-import { LocalMediaStorage } from '../src/shared/storage/local-media-storage';
-import { MediaStorage } from '../src/shared/storage/media-storage';
-import { S3MediaStorage } from '../src/shared/storage/s3-media-storage';
+import { createMediaStorage } from '../src/shared/storage/create-media-storage';
 
 /**
  * Copia las fotos de una tienda importada desde Supabase Storage al
@@ -72,22 +70,6 @@ function readOptions(): Options {
   return { slug: values.slug, dryRun: values['dry-run'] ?? false };
 }
 
-function storageFrom(env: Env): MediaStorage {
-  if (env.STORAGE_DRIVER === 's3') {
-    return new S3MediaStorage({
-      bucket: env.S3_BUCKET ?? '',
-      region: env.S3_REGION,
-      endpoint: env.S3_ENDPOINT,
-      accessKeyId: env.S3_ACCESS_KEY_ID ?? '',
-      secretAccessKey: env.S3_SECRET_ACCESS_KEY ?? '',
-      publicUrl: env.S3_PUBLIC_URL ?? '',
-      forcePathStyle: env.S3_FORCE_PATH_STYLE,
-    });
-  }
-
-  return new LocalMediaStorage(env.MEDIA_DIR, env.MEDIA_PUBLIC_URL);
-}
-
 async function download(url: string): Promise<Buffer> {
   const response = await fetch(url);
 
@@ -106,7 +88,7 @@ function alreadyMigrated(storagePath: string): boolean {
 async function main(): Promise<void> {
   const options = readOptions();
   const env = validateEnv(process.env);
-  const storage = storageFrom(env);
+  const storage = createMediaStorage(env);
 
   if (!env.DIRECT_URL) {
     throw new MediaImportError('Falta DIRECT_URL (rol dueño de la base de la API) en el .env.');

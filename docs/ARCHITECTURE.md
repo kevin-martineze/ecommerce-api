@@ -472,7 +472,8 @@ el servidor», que parece un problema de credenciales y no lo es.
 ### Por qué un almacenamiento intercambiable
 
 `MediaStorage` es una clase abstracta con dos implementaciones: disco local y
-S3. Los servicios piden `MediaStorage` y el entorno decide cuál hay detrás
+S3. En producción el bucket es Cloudflare R2 (sin costo por descarga); los
+pasos están en `DEPLOY.md`. Los servicios piden `MediaStorage` y el entorno decide cuál hay detrás
 (`STORAGE_DRIVER`). El driver local existe porque en desarrollo y en un
 despliegue de un solo servidor un bucket es fricción sin beneficio; el S3
 existe porque con dos instancias cada una tendría su disco, y una foto subida

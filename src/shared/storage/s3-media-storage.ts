@@ -35,6 +35,12 @@ export class S3MediaStorage extends MediaStorage {
         accessKeyId: options.accessKeyId,
         secretAccessKey: options.secretAccessKey,
       },
+      // Desde la 3.729 el SDK agrega sumas de verificación a cada petición
+      // aunque el servicio no las pida. Cloudflare R2 (y algunos S3
+      // compatibles) rechazan parte de esas cabeceras; así solo se mandan
+      // cuando la operación las exige, que es lo que aceptan todos.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
