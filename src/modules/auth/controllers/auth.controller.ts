@@ -22,7 +22,7 @@ import {
 } from '@shared/dtos/auth/account.dto';
 import { LoginDto } from '@shared/dtos/auth/login.dto';
 import { RefreshDto, SwitchStoreDto } from '@shared/dtos/auth/refresh.dto';
-import { RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
+import { CreateStoreDto, RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
 import { MeResponseDto, SessionResponseDto } from '@shared/dtos/auth/session-response.dto';
 import { JwtAuthGuard } from '@shared/guards/jwt-auth.guard';
 
@@ -50,6 +50,20 @@ export class AuthController {
   @ApiOperation({ summary: 'Crea una tienda y la cuenta de su dueña. Devuelve sesión iniciada.' })
   register(@Body() dto: RegisterStoreDto, @Req() req: FastifyRequest): Promise<SessionResponseDto> {
     return this.auth.registerStore(dto, contextOf(req));
+  }
+
+  @Post('stores')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Crea otra tienda para esta cuenta. Devuelve una sesión ya atada a ella.',
+  })
+  createStore(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateStoreDto,
+    @Req() req: FastifyRequest,
+  ): Promise<SessionResponseDto> {
+    return this.auth.createStore(user.id, dto, contextOf(req));
   }
 
   @Post('login')

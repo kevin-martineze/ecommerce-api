@@ -75,6 +75,8 @@ export interface TestApp {
   lastMailTo(email: string): string | null;
   /** Un correo único de esta corrida, que `close` borra si llega a tener cuenta. */
   email(label: string): string;
+  /** Una tienda creada por fuera de `register`, para que `close` también la borre. */
+  forgetStore(storeId: string): void;
   /** Conexión con el rol dueño, para preparar estados que la API no deja crear. */
   withOwner<T>(work: (client: Client) => Promise<T>): Promise<T>;
   close(): Promise<void>;
@@ -181,6 +183,10 @@ export async function startTestApp(): Promise<TestApp> {
     upload,
     withOwner,
     mediaDir,
+
+    forgetStore(storeId: string): void {
+      storeIds.push(storeId);
+    },
 
     email(label: string): string {
       const email = `e2e-${label}-${run}@tienda.test`;

@@ -148,6 +148,54 @@ describe('Cuenta y equipo (e2e)', () => {
     });
   });
 
+  describe('otra tienda', () => {
+    it('una cuenta existente crea otra tienda y queda dentro de ella', async () => {
+      const slug = `e2e-segunda-${Date.now().toString(36)}`;
+
+      const created = await api.call<SessionBody>('POST', '/auth/stores', owner, {
+        storeName: 'Segunda tienda',
+        storeSlug: slug,
+        whatsappPhone: '573001234567',
+        refreshToken: owner.refreshToken,
+      });
+
+      expect(created.status).toBe(201);
+      expect(created.body.stores).toHaveLength(2);
+      expect(created.body.activeStoreId).not.toBe(owner.storeId);
+
+      const newStoreId = created.body.activeStoreId ?? '';
+
+      api.forgetStore(newStoreId);
+
+      const sizes = await api.call<unknown[]>('GET', `/stores/${newStoreId}/sizes`, {
+        token: created.body.accessToken,
+      });
+
+      expect(sizes.body.length).toBeGreaterThan(0);
+
+      // El refresh token de otra cuenta no sirve para cambiar de tienda.
+      const stranger = await api.register('account-stranger');
+      const mixed = await api.call(
+        'POST',
+        '/auth/switch-store',
+        { token: created.body.accessToken },
+        { storeId: owner.storeId, refreshToken: stranger.refreshToken },
+      );
+
+      expect(mixed.status).toBe(401);
+
+      const back = await api.call<SessionBody>(
+        'POST',
+        '/auth/switch-store',
+        { token: created.body.accessToken },
+        { storeId: owner.storeId, refreshToken: created.body.refreshToken },
+      );
+
+      expect(back.body).toMatchObject({ activeStoreId: owner.storeId });
+      owner = { ...owner, token: back.body.accessToken, refreshToken: back.body.refreshToken };
+    });
+  });
+
   describe('equipo', () => {
     const invitee = () => api.email('invitee');
     let staffEmail: string;

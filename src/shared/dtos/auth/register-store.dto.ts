@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, PickType } from '@nestjs/swagger';
 import { IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 /**
@@ -59,4 +59,16 @@ export class RegisterStoreDto {
   @IsString()
   @Matches(/^[0-9]{10,15}$/, { message: 'El número de WhatsApp debe tener entre 10 y 15 dígitos.' })
   whatsappPhone!: string;
+}
+
+/** Una tienda más para la cuenta de la sesión. */
+export class CreateStoreDto extends PickType(RegisterStoreDto, [
+  'storeName',
+  'storeSlug',
+  'whatsappPhone',
+] as const) {
+  @ApiProperty({ description: 'Refresh token de la sesión actual: se cierra y se emite otra.' })
+  @IsString()
+  @MaxLength(200)
+  refreshToken!: string;
 }
