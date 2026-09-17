@@ -100,4 +100,14 @@ describe('Refresh de sesión (e2e)', () => {
     expect(logout.status).toBe(204);
     expect((await refresh(token)).status).toBe(401);
   });
+
+  it('una sesión cerrada que vuelve a presentarse no cierra las demás', async () => {
+    const closed = await login();
+    const alive = await login();
+
+    await api.call('POST', '/auth/logout', undefined, { refreshToken: closed });
+
+    expect((await refresh(closed)).status).toBe(401);
+    expect((await refresh(alive)).status).toBe(200);
+  });
 });

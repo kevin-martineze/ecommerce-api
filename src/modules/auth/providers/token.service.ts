@@ -98,15 +98,22 @@ export class TokenService {
    *
    * Rotación con detección de reuso: al canjearlo, el token viejo no se borra
    * sino que queda marcado apuntando al nuevo. Si alguien vuelve a presentar
-   * uno ya canjeado, solo hay dos explicaciones —una copia robada, o un cliente
+   * uno ya CANJEADO, solo hay dos explicaciones —una copia robada, o un cliente
    * roto— y en ambas lo correcto es lo mismo: revocar TODA la cadena de esa
-   * cuenta y obligar a entrar de nuevo. Sin esto, un refresh token robado sirve
+   * cuenta y obligar a entrar de nuevo. Un token CERRADO sin canjear no entra
+   * en esa sospecha: ver abajo. Sin esto, un refresh token robado sirve
    * para siempre y en silencio, porque el ladrón lo rota igual que el dueño.
    */
   async rotate(
     presentedToken: string,
     storeIdOverride?: string | null,
     context: SessionContext = {},
+    /**
+     * Cuando la petición ya trae un access token (cambiar de tienda, crear
+     * otra), el refresh token tiene que ser de esa misma cuenta: mezclar el
+     * de otra persona no puede emitir nada.
+     */
+    expectedUserId?: string,
   ): Promise<IssuedSession> {
     const tokenHash = this.hashToken(presentedToken);
 
@@ -115,11 +122,19 @@ export class TokenService {
       include: { user: true },
     });
 
-    if (!stored) {
+    if (!stored || (expectedUserId !== undefined && stored.userId !== expectedUserId)) {
       throw new UnauthorizedException('La sesión no es válida. Vuelve a entrar.');
     }
 
-    const alreadyUsed = stored.rotatedToId !== null || stored.revokedAt !== null;
+    // Cerrada sin rotar (logout, cambio de contraseña, quitada del equipo): el
+    // token no sirve, pero presentarlo no es señal de robo. Es lo normal en el
+    // otro dispositivo cuya sesión se cerró; revocar la cadena ahí echaría
+    // también a quien acaba de cambiar la contraseña.
+    if (stored.revokedAt !== null && stored.rotatedToId === null) {
+      throw new UnauthorizedException('La sesión se cerró. Vuelve a entrar.');
+    }
+
+    const alreadyUsed = stored.rotatedToId !== null;
 
     if (alreadyUsed && !(await this.isConcurrentRefresh(stored))) {
       this.logger.warn(
