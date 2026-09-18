@@ -20,7 +20,6 @@ const STORE_INCLUDE = {
     include: { user: { select: { id: true, email: true, fullName: true } } },
     orderBy: { createdAt: 'asc' },
   },
-  _count: { select: { products: true, orders: true } },
 } satisfies Prisma.StoreInclude;
 
 type StoreWithMembers = Prisma.StoreGetPayload<{ include: typeof STORE_INCLUDE }>;
@@ -30,6 +29,17 @@ interface SubscriptionRow {
   status: PlatformStoreDto['subscriptionStatus'];
   currentPeriodEnd: Date;
   notes: string | null;
+}
+
+/**
+ * Lo que de una tienda vive bajo RLS y la consola necesita: su suscripción y
+ * cuánto lleva. Se lee con el contexto de esa tienda; sin él, `products` y
+ * `orders` devuelven cero filas y la consola mostraría "0 / 0" para todas.
+ */
+interface TenantSummary {
+  subscription: SubscriptionRow | null;
+  productCount: number;
+  orderCount: number;
 }
 
 /** Hasta cuántas tiendas devuelve el listado. Una plataforma con más ya necesita paginar. */
@@ -87,13 +97,13 @@ export class PlatformService {
     const rows: PlatformStoreDto[] = [];
 
     for (const store of stores) {
-      const subscription = await this.subscriptionOf(store.id);
+      const summary = await this.tenantSummary(store.id);
 
-      if (query.overdue && !isOverdue(store, subscription, new Date())) {
+      if (query.overdue && !isOverdue(store, summary.subscription, new Date())) {
         continue;
       }
 
-      rows.push(toStoreDto(store, subscription));
+      rows.push(toStoreDto(store, summary));
     }
 
     return rows;
@@ -109,9 +119,14 @@ export class PlatformService {
         orderBy: { createdAt: 'desc' },
         include: { recordedBy: { select: { email: true } } },
       });
+      const summary: TenantSummary = {
+        subscription,
+        productCount: await tx.product.count({ where: { storeId } }),
+        orderCount: await tx.order.count({ where: { storeId } }),
+      };
 
       return {
-        ...toStoreDto(store, subscription),
+        ...toStoreDto(store, summary),
         subscriptionNotes: subscription?.notes ?? null,
         payments: payments.map(toPaymentDto),
       };
@@ -233,7 +248,7 @@ export class PlatformService {
     let markedPastDue = 0;
 
     for (const store of candidates) {
-      if (!isOverdue(store, await this.subscriptionOf(store.id), now)) {
+      if (!isOverdue(store, (await this.tenantSummary(store.id)).subscription, now)) {
         continue;
       }
 
@@ -261,20 +276,21 @@ export class PlatformService {
     return store;
   }
 
-  private subscriptionOf(storeId: string): Promise<SubscriptionRow | null> {
-    return this.prisma.forStore(storeId, (tx) =>
-      tx.subscription.findUnique({
+  private tenantSummary(storeId: string): Promise<TenantSummary> {
+    return this.prisma.forStore(storeId, async (tx) => ({
+      subscription: await tx.subscription.findUnique({
         where: { storeId },
         select: { planCode: true, status: true, currentPeriodEnd: true, notes: true },
       }),
-    );
+      productCount: await tx.product.count({ where: { storeId } }),
+      orderCount: await tx.order.count({ where: { storeId } }),
+    }));
   }
 }
 
-function toStoreDto(
-  store: StoreWithMembers,
-  subscription: SubscriptionRow | null,
-): PlatformStoreDto {
+function toStoreDto(store: StoreWithMembers, summary: TenantSummary): PlatformStoreDto {
+  const { subscription } = summary;
+
   return {
     id: store.id,
     name: store.name,
@@ -292,8 +308,8 @@ function toStoreDto(
       fullName: member.user.fullName,
       role: member.role,
     })),
-    productCount: store._count.products,
-    orderCount: store._count.orders,
+    productCount: summary.productCount,
+    orderCount: summary.orderCount,
   };
 }
 

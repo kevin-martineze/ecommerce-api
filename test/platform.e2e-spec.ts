@@ -225,6 +225,12 @@ describe('Plataforma (e2e)', () => {
       });
     });
 
+    it('la consola cuenta las prendas de cada tienda aunque estén bajo RLS', async () => {
+      const { body } = await platform<StoreRow[]>('GET', `/stores?q=${shop.slug}`);
+
+      expect(body.find((store) => store.id === shop.storeId)?.productCount).toBe(1);
+    });
+
     it('la tienda ve su plan, hasta cuándo está paga y cuánto lleva usado', async () => {
       const { status, body } = await panel<Summary>('GET', '/subscription');
 
