@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PlatformController } from './controllers/platform.controller';
 import { SubscriptionsController } from './controllers/subscriptions.controller';
+import { PlatformDashboardService } from './providers/platform-dashboard.service';
 import { PlatformService } from './providers/platform.service';
 import { SubscriptionsService } from './providers/subscriptions.service';
 
@@ -14,6 +15,6 @@ import { SubscriptionsService } from './providers/subscriptions.service';
  */
 @Module({
   controllers: [PlatformController, SubscriptionsController],
-  providers: [PlatformService, SubscriptionsService],
+  providers: [PlatformService, PlatformDashboardService, SubscriptionsService],
 })
 export class PlatformModule {}

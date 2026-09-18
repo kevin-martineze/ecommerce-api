@@ -246,6 +246,54 @@ describe('Plataforma (e2e)', () => {
     });
   });
 
+  describe('resumen del negocio', () => {
+    interface Dashboard {
+      stores: { total: number; active: number; trial: number };
+      payingStores: number;
+      mrr: number;
+      revenueThisMonth: number;
+      trialsEnding: { id: string; daysLeft: number }[];
+      overdue: { id: string }[];
+      recentPayments: { storeId: string; amountCop: number; storeSlug: string }[];
+    }
+
+    it('cuenta la tienda que paga, su plan en el MRR y sus pagos del mes', async () => {
+      const { status, body } = await platform<Dashboard>('GET', '/dashboard');
+
+      expect(status).toBe(200);
+      expect(body.stores.total).toBeGreaterThanOrEqual(body.stores.active + body.stores.trial);
+      expect(body.payingStores).toBeGreaterThanOrEqual(1);
+      // La tienda de prueba está en Básico y activa: su plan cuenta en el MRR.
+      expect(body.mrr).toBeGreaterThanOrEqual(49000);
+      // Tres pagos de 49.000 registrados hoy en esta suite.
+      expect(body.revenueThisMonth).toBeGreaterThanOrEqual(3 * 49000);
+      expect(
+        body.recentPayments.filter((payment) => payment.storeId === shop.storeId),
+      ).toHaveLength(3);
+      expect(body.recentPayments[0]?.storeSlug).toBeDefined();
+    });
+
+    it('lista los pagos de un mes con su total; un mes vacío da cero', async () => {
+      const month = new Date().toISOString().slice(0, 7);
+      const current = await platform<{ total: number; payments: { storeId: string }[] }>(
+        'GET',
+        `/payments?month=${month}`,
+      );
+
+      expect(current.status).toBe(200);
+      expect(current.body.total).toBeGreaterThanOrEqual(3 * 49000);
+      expect(current.body.payments.some((payment) => payment.storeId === shop.storeId)).toBe(true);
+
+      const empty = await platform<{ total: number; payments: unknown[] }>(
+        'GET',
+        '/payments?month=2000-01',
+      );
+
+      expect(empty.body).toEqual({ month: '2000-01', total: 0, payments: [] });
+      expect((await platform('GET', '/payments?month=2026-9')).status).toBe(400);
+    });
+  });
+
   describe('vencimientos', () => {
     it('reconcile marca como vencidas las pruebas terminadas y los períodos pasados', async () => {
       const trial = await api.register('platform-trial');
@@ -291,6 +339,12 @@ describe('Plataforma (e2e)', () => {
 
       // Vencida sigue vendiendo: PAST_DUE solo avisa.
       expect((await api.call('GET', `/public/${paid.slug}`)).status).toBe(200);
+
+      const summary = await platform<{ overdue: { id: string }[] }>('GET', '/dashboard');
+
+      expect(summary.body.overdue.map((store) => store.id)).toEqual(
+        expect.arrayContaining([trial.storeId, paid.storeId]),
+      );
     });
   });
 });

@@ -268,3 +268,121 @@ export class ReconcileResultDto {
   @ApiProperty({ description: 'Tiendas que pasaron a PAST_DUE en esta corrida.' })
   markedPastDue!: number;
 }
+
+// ---------------------------------------------------------------------------
+// Resumen del negocio y pagos
+// ---------------------------------------------------------------------------
+
+export class StoreCountsDto {
+  @ApiProperty()
+  total!: number;
+
+  @ApiProperty()
+  trial!: number;
+
+  @ApiProperty()
+  active!: number;
+
+  @ApiProperty()
+  pastDue!: number;
+
+  @ApiProperty()
+  suspended!: number;
+}
+
+export class PlatformStoreRefDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  slug!: string;
+
+  @ApiProperty({ nullable: true, description: 'Correo de la primera dueña.' })
+  ownerEmail!: string | null;
+}
+
+export class TrialEndingDto extends PlatformStoreRefDto {
+  @ApiProperty()
+  trialEndsAt!: Date;
+
+  @ApiProperty({ description: 'Negativo si ya venció y el cron no ha pasado.' })
+  daysLeft!: number;
+}
+
+export class OverdueStoreDto extends PlatformStoreRefDto {
+  @ApiProperty({ nullable: true, description: 'Fecha, sin hora.' })
+  currentPeriodEnd!: string | null;
+
+  @ApiProperty({ description: 'Días desde que venció.' })
+  daysOverdue!: number;
+}
+
+export class PlatformPaymentDto extends PaymentDto {
+  @ApiProperty()
+  storeId!: string;
+
+  @ApiProperty()
+  storeName!: string;
+
+  @ApiProperty()
+  storeSlug!: string;
+}
+
+export class PlatformDashboardDto {
+  @ApiProperty({ type: StoreCountsDto })
+  stores!: StoreCountsDto;
+
+  @ApiProperty({ description: 'Tiendas con suscripción activa: ya pagaron al menos una vez.' })
+  payingStores!: number;
+
+  @ApiProperty({
+    description:
+      'Ingreso mensual recurrente: suma del plan de las tiendas que pagan y no están suspendidas.',
+  })
+  mrr!: number;
+
+  @ApiProperty({ description: 'Pagos registrados este mes, hora de Colombia.' })
+  revenueThisMonth!: number;
+
+  @ApiProperty()
+  revenueLastMonth!: number;
+
+  @ApiProperty({
+    type: [TrialEndingDto],
+    description: 'Pruebas que terminan en 7 días o ya terminaron.',
+  })
+  trialsEnding!: TrialEndingDto[];
+
+  @ApiProperty({ type: [OverdueStoreDto] })
+  overdue!: OverdueStoreDto[];
+
+  @ApiProperty({
+    type: [PlatformPaymentDto],
+    description: 'Los últimos 10 pagos, el más nuevo primero.',
+  })
+  recentPayments!: PlatformPaymentDto[];
+}
+
+export class PaymentsQueryDto {
+  @ApiPropertyOptional({
+    example: '2026-09',
+    description: 'Mes de Colombia. Por defecto, el actual.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'El mes va como AAAA-MM.' })
+  month?: string;
+}
+
+export class MonthPaymentsDto {
+  @ApiProperty({ example: '2026-09' })
+  month!: string;
+
+  @ApiProperty({ description: 'Suma de los pagos del mes.' })
+  total!: number;
+
+  @ApiProperty({ type: [PlatformPaymentDto], description: 'El más nuevo primero.' })
+  payments!: PlatformPaymentDto[];
+}

@@ -525,7 +525,12 @@ quién ve todas las tiendas no puede ser una petición HTTP.
 ### RLS no se relaja para la plataforma
 
 `subscriptions` y `payments` están bajo RLS. La plataforma las lee tienda por
-tienda con `forStore`, una consulta más por fila del listado. La alternativa
+tienda con `forStore`, una consulta más por fila del listado. Lo mismo hace el
+resumen del negocio (`/platform/dashboard`, `/platform/payments`): recorre
+todas las tiendas para sumar ingresos y MRR. Con cientos de tiendas convendrá
+guardar esos totales precalculados, no relajar el aislamiento. `_count` de
+`products` u `orders` desde `stores` también cae bajo RLS y devuelve cero sin
+contexto: se contó así una vez y la consola mostró "0 / 0" para todas. La alternativa
 —una política que deje ver todo a un contexto "plataforma"— es exactamente el
 agujero que RLS existe para no tener. Con cientos de tiendas el listado
 necesitará paginar; hoy tiene un techo de 200.

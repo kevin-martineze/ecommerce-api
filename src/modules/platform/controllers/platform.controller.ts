@@ -14,9 +14,13 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthenticatedUser, CurrentUser } from '@shared/decorators/current-user.decorator';
 import { PlatformRoute } from '@shared/decorators/platform-route.decorator';
+import { bogotaMonthKey } from '@shared/utils/bogota-time';
 import {
   ChangePlanDto,
+  MonthPaymentsDto,
+  PaymentsQueryDto,
   PlanDto,
+  PlatformDashboardDto,
   PlatformStoreDetailDto,
   PlatformStoreDto,
   PlatformStoreListQueryDto,
@@ -26,13 +30,31 @@ import {
   UpdateStoreStatusDto,
 } from '@shared/dtos/platform/platform.dto';
 
+import { PlatformDashboardService } from '../providers/platform-dashboard.service';
 import { PlatformService } from '../providers/platform.service';
 
 @ApiTags('plataforma')
 @PlatformRoute()
 @Controller('platform')
 export class PlatformController {
-  constructor(private readonly platform: PlatformService) {}
+  constructor(
+    private readonly platform: PlatformService,
+    private readonly dashboard: PlatformDashboardService,
+  ) {}
+
+  @Get('dashboard')
+  @ApiOperation({
+    summary: 'Los números del negocio: ingresos, quién paga, quién está por vencer.',
+  })
+  summary(): Promise<PlatformDashboardDto> {
+    return this.dashboard.dashboard();
+  }
+
+  @Get('payments')
+  @ApiOperation({ summary: 'Todos los pagos de un mes, con su tienda.' })
+  payments(@Query() query: PaymentsQueryDto): Promise<MonthPaymentsDto> {
+    return this.dashboard.paymentsOfMonth(query.month ?? bogotaMonthKey(new Date()));
+  }
 
   @Get('plans')
   @ApiOperation({ summary: 'Planes comerciales.' })

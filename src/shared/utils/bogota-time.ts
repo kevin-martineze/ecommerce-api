@@ -13,3 +13,30 @@ export function startOfMonthInBogota(now: Date): Date {
 
   return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1, BOGOTA_OFFSET_HOURS));
 }
+
+/** El mes de Bogotá en que cae la fecha, como `YYYY-MM`. */
+export function bogotaMonthKey(date: Date): string {
+  const local = new Date(date.getTime() - BOGOTA_OFFSET_HOURS * 3_600_000);
+
+  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Límites de un mes de Bogotá (`YYYY-MM`): desde su primer instante hasta el
+ * primer instante del mes siguiente, exclusivo.
+ */
+export function bogotaMonthRange(month: string): { start: Date; end: Date } {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+
+  if (!match) {
+    throw new Error(`Mes inválido: "${month}". Usa YYYY-MM.`);
+  }
+
+  const year = Number(match[1]);
+  const index = Number(match[2]) - 1;
+
+  return {
+    start: new Date(Date.UTC(year, index, 1, BOGOTA_OFFSET_HOURS)),
+    end: new Date(Date.UTC(year, index + 1, 1, BOGOTA_OFFSET_HOURS)),
+  };
+}
