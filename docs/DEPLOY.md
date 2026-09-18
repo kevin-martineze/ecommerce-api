@@ -36,7 +36,7 @@ sirve en producción.
 1. Bucket → **Settings** → **Public access** → **Custom Domains** →
    **Connect Domain**.
 2. Un subdominio del dominio de la plataforma, por ejemplo
-   `media.mitienda.com`. El dominio tiene que estar en Cloudflare (sus
+   `media.globerce.com`. El dominio tiene que estar en Cloudflare (sus
    nameservers).
 3. Ese valor, con `https://` y sin barra final, va en `S3_PUBLIC_URL`.
 
@@ -67,7 +67,7 @@ S3_REGION=auto
 S3_BUCKET=tienda-media
 S3_ACCESS_KEY_ID=<access key id>
 S3_SECRET_ACCESS_KEY=<secret access key>
-S3_PUBLIC_URL=https://media.mitienda.com
+S3_PUBLIC_URL=https://media.globerce.com
 S3_FORCE_PATH_STYLE=false
 ```
 
@@ -124,17 +124,17 @@ terminal, correr podman con `STORAGE_DRIVER=` vacío.
 
 ## 2. Dominios
 
-Cada tienda es un subdominio (`boutique.mitienda.com`), así que hace falta
-un registro DNS comodín `*.mitienda.com` apuntando al frontend, y un
+Cada tienda es un subdominio (`boutique.globerce.com`), así que hace falta
+un registro DNS comodín `*.globerce.com` apuntando al frontend, y un
 certificado comodín.
 
 **Decisión pendiente:** si el frontend va en Vercel, Vercel pide manejar los
 nameservers del dominio para emitir el certificado comodín (confirmarlo en
 su documentación al configurar). Eso choca con tener el mismo dominio en
-Cloudflare para `media.mitienda.com`. Opciones:
+Cloudflare para `media.globerce.com`. Opciones:
 
 - Dominio de la plataforma en Vercel, y las fotos en un dominio aparte que sí
-  esté en Cloudflare (`mitiendamedia.com`).
+  esté en Cloudflare (`globerce-media.com`).
 - Dominio en Cloudflare y el frontend también en Cloudflare (Workers con
   `@sveltejs/adapter-cloudflare`).
 - Dominio en Cloudflare con el comodín en modo proxy hacia Vercel (Cloudflare

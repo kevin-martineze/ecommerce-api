@@ -1,10 +1,10 @@
-# tienda-api
+# globerce-api
 
-API multi-inquilino de la plataforma de tiendas de ropa. Cada tienda es un
+API multi-inquilino de **Globerce**, la plataforma de tiendas de ropa. Cada tienda es un
 inquilino con su propio catálogo, sus pedidos y su equipo; el mismo despliegue
 las atiende a todas.
 
-Consume esta API el frontend SvelteKit (`Projects/personal/tienda-ropa`), y lo
+Consume esta API el frontend SvelteKit (`shopping-sas`), y lo
 hace **servidor contra servidor**: el navegador de la clienta nunca habla
 directamente con esta API.
 

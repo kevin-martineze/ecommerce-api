@@ -122,7 +122,7 @@ async function bootstrap(): Promise<void> {
     const document = SwaggerModule.createDocument(
       app,
       new DocumentBuilder()
-        .setTitle('Tienda — API')
+        .setTitle('Globerce — API')
         .setDescription(
           'API multi-inquilino. Tres superficies:\n\n' +
             '- `/public/:storeSlug/*` — catálogo y pedidos del visitante. Sin autenticación.\n' +

@@ -1,7 +1,7 @@
 {
-  "name": "tienda-api",
+  "name": "globerce-api",
   "version": "0.1.0",
-  "description": "API multi-inquilino para la plataforma de tiendas de ropa",
+  "description": "Globerce: API multi-inquilino de la plataforma de tiendas de ropa",
   "private": true,
   "license": "UNLICENSED",
   "engines": {

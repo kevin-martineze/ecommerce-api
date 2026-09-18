@@ -93,7 +93,7 @@ const envSchema = z.object({
   MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
   /** `smtp://usuario:clave@host:587` o `smtps://…:465`. Solo con `MAIL_DRIVER=smtp`. */
   SMTP_URL: z.string().url().optional(),
-  MAIL_FROM: z.string().min(3).default('Tienda <no-responder@tienda.local>'),
+  MAIL_FROM: z.string().min(3).default('Globerce <no-responder@globerce.local>'),
 
   /**
    * Base de los enlaces que viajan por correo (recuperar contraseña, aceptar

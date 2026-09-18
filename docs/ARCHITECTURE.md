@@ -397,7 +397,7 @@ solo como almacenamiento de fotos hasta la fase 8.
 En el frontend:
 
 - **Tienda pública por host:** cada tienda es un subdominio de
-  `STORE_ROOT_DOMAIN` (`boutique.mitienda.com`); el dominio raíz sirve
+  `STORE_ROOT_DOMAIN` (`boutique.globerce.com`); el dominio raíz sirve
   `STORE_SLUG` o, sin ella, lleva a `/registro`. El panel opera sobre la
   tienda de la sesión y se cambia solo a la del subdominio si la cuenta es
   miembro. Los dominios propios (`custom_domain`) todavía no se resuelven.
