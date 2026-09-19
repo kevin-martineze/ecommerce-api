@@ -104,6 +104,19 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url().default('http://localhost:5173').transform(stripTrailingSlash),
 
   /**
+   * Cómo se cobra la mensualidad.
+   *
+   * `manual` es lo real hoy: los pagos los registra la plataforma desde su
+   * consola cuando la tienda transfiere. `simulated` abre una pantalla de pago
+   * de mentira en el panel, que activa el plan sin cobrar nada: sirve para
+   * probar el flujo completo mientras no hay pasarela.
+   *
+   * Por defecto `manual`, a propósito. Un endpoint que regala suscripciones no
+   * puede quedar encendido en producción porque alguien olvidó apagarlo.
+   */
+  BILLING_DRIVER: z.enum(['manual', 'simulated']).default('manual'),
+
+  /**
    * Secreto que el frontend manda en `x-globerce-key`. Con él puesto, la API
    * solo atiende a quien lo conozca (ver FrontSecretGuard). Vacío en
    * desarrollo y en los tests; obligatorio en cuanto la API tenga IP pública.

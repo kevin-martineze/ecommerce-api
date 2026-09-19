@@ -57,6 +57,26 @@ export class PlanUsageDto {
   ordersThisMonth!: number;
 }
 
+export class SubscriptionPaymentDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  amountCop!: number;
+
+  @ApiProperty({ description: 'Fecha, sin hora.' })
+  periodStart!: string;
+
+  @ApiProperty({ description: 'Fecha, sin hora.' })
+  periodEnd!: string;
+
+  @ApiProperty({ description: '`simulado` mientras no haya pasarela.' })
+  method!: string;
+
+  @ApiProperty()
+  createdAt!: Date;
+}
+
 export class SubscriptionSummaryDto {
   @ApiProperty({ type: PlanDto })
   plan!: PlanDto;
@@ -78,6 +98,14 @@ export class SubscriptionSummaryDto {
 
   @ApiProperty({ type: PlanUsageDto })
   usage!: PlanUsageDto;
+
+  @ApiProperty({
+    description: 'Si la tienda puede activar su plan sola (hay pasarela, aunque sea simulada).',
+  })
+  selfServiceBilling!: boolean;
+
+  @ApiProperty({ type: [SubscriptionPaymentDto], description: 'Sus pagos, el más nuevo primero.' })
+  payments!: SubscriptionPaymentDto[];
 }
 
 // ---------------------------------------------------------------------------
@@ -385,4 +413,16 @@ export class MonthPaymentsDto {
 
   @ApiProperty({ type: [PlatformPaymentDto], description: 'El más nuevo primero.' })
   payments!: PlatformPaymentDto[];
+}
+
+// ---------------------------------------------------------------------------
+// Lo que la tienda hace con su plan
+// ---------------------------------------------------------------------------
+
+export class ActivatePlanDto {
+  @ApiProperty({ example: 'pro', description: 'Plan que se activa y se cobra.' })
+  @Trim()
+  @IsString()
+  @Matches(/^[a-z0-9-]{2,40}$/, { message: 'Elige un plan.' })
+  planCode!: string;
 }

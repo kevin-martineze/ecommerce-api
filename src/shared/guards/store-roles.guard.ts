@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Reflector } from '@nestjs/core';
 import { MemberRole } from '@prisma/client';
 import { AuthenticatedUser } from '@shared/decorators/current-user.decorator';
+import { ALLOWED_WITHOUT_SUBSCRIPTION } from '@shared/decorators/billing-route.decorator';
 import { ROLES_KEY } from '@shared/decorators/roles.decorator';
 import { PrismaService } from '@db/prisma.service';
 
@@ -64,12 +65,29 @@ export class StoreRolesGuard implements CanActivate {
       throw new ForbiddenException('No tienes acceso a esta tienda.');
     }
 
+    const isWrite = request.method !== 'GET';
+    const allowedWithoutSubscription = this.reflector.getAllAndOverride<boolean | undefined>(
+      ALLOWED_WITHOUT_SUBSCRIPTION,
+      [context.getHandler(), context.getClass()],
+    );
+
     // Tienda suspendida: el panel queda en lectura. Se puede mirar y exportar;
     // no crear ni cambiar nada hasta que la plataforma la reactive.
-    if (membership.store.status === 'SUSPENDED' && request.method !== 'GET') {
+    if (membership.store.status === 'SUSPENDED' && isWrite) {
       throw new ForbiddenException({
         message: 'La tienda está suspendida: el panel queda en solo lectura.',
         error: 'store_suspended',
+      });
+    }
+
+    // Prueba terminada o mensualidad vencida: el panel también queda en
+    // lectura. La tienda sigue vendiendo —cortarle las ventas a la dueña por
+    // un pago atrasado castiga a sus clientas—, pero para volver a editar hay
+    // que ponerse al día. Lo que sirve para pagar es lo único que pasa.
+    if (membership.store.status === 'PAST_DUE' && isWrite && !allowedWithoutSubscription) {
+      throw new ForbiddenException({
+        message: 'Tu plan venció. Actívalo para volver a editar tu tienda.',
+        error: 'subscription_required',
       });
     }
 
