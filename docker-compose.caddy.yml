@@ -13,8 +13,8 @@ services:
     ports:
       - '80:80'
       - '443:443'
-    environment:
-      API_DOMAIN: ${API_DOMAIN:?falta API_DOMAIN}
+    # `API_DOMAIN` sale de ahí: es el dominio del certificado.
+    env_file: .env.production
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       # El certificado vive en este volumen: sin él, cada reinicio pediría uno

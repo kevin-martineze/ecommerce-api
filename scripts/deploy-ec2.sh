@@ -39,9 +39,13 @@ step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 step "1/4 Copiando el código a $DEPLOY_HOST:$REMOTE_DIR"
 # `--delete` deja el servidor igual al repositorio: un archivo borrado acá se
 # borra allá. Lo que NO se toca está en `--exclude`: las variables y los datos.
+#
+# Las exclusiones van ancladas con `/`: sin la barra, rsync las aplica a
+# CUALQUIER nivel, y `media` se llevaba también `src/shared/media` — la imagen
+# construía bien y el contenedor moría al arrancar.
 rsync -az --delete \
-  --exclude node_modules --exclude dist --exclude .git --exclude media \
-  --exclude '.env*' --exclude coverage \
+  --exclude /node_modules --exclude /dist --exclude /.git --exclude /media \
+  --exclude '/.env*' --exclude /coverage --exclude /.deploy.env \
   -e "ssh ${SSH_OPTS[*]}" \
   ./ "$DEPLOY_HOST:$REMOTE_DIR/"
 

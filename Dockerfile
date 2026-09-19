@@ -70,14 +70,18 @@ RUN DIRECT_URL=postgresql://relleno:relleno@localhost:5432/relleno \
   && rm -rf /pnpm
 
 COPY --from=build /app/dist ./dist
-COPY --chmod=755 docker/entrypoint.sh ./docker/entrypoint.sh
+COPY docker/entrypoint.sh ./docker/entrypoint.sh
 
+# `chmod` normal y no `COPY --chmod`: eso último exige BuildKit, y el Docker
+# que trae Ubuntu construye con el motor clásico.
+#
 # Solo `media` necesita escritura, y solo con el driver local. Un `chown -R`
 # sobre /app copiaría `node_modules` entero a una capa nueva: media imagen más.
 #
 # Node ya trae el usuario `node`. Correr como root dentro del contenedor no
 # aporta nada y convierte cualquier ejecución remota en root de la imagen.
-RUN install -d -o node -g node /app/media
+RUN chmod 755 docker/entrypoint.sh \
+  && install -d -o node -g node /app/media
 
 USER node
 

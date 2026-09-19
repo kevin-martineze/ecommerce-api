@@ -39,8 +39,8 @@ No reemplaza a una red privada, pero convierte "cualquiera puede llamar" en
 
 ## 2. Crear la instancia
 
-Región **us-east-1** (N. Virginia): es la más barata y la más cercana a
-Colombia con presencia completa.
+Región **us-east-2** (Ohio): mismo precio que Virginia y latencia
+equivalente desde Colombia. La cuenta ya está ahí.
 
 | Qué    | Valor                                                |
 | ------ | ---------------------------------------------------- |
@@ -65,17 +65,15 @@ los contenedores. Para consultarlo desde tu máquina se usa un túnel SSH (§ 7)
 
 ## 3. Preparar el servidor
 
+Lo hace el `user-data` al primer arranque, así que no hay nada que escribir a
+mano: instala `docker.io`, `docker-compose-v2`, `postgresql-client` y
+`unattended-upgrades` (parches de seguridad automáticos), y crea
+`/opt/globerce`. Termina cuando existe `/opt/globerce/.listo`, unos dos
+minutos después de lanzar la instancia.
+
 ```bash
-ssh -i ~/.ssh/globerce.pem ubuntu@<IP>
-
-sudo apt-get update && sudo apt-get upgrade -y
-sudo apt-get install -y docker.io docker-compose-v2 unattended-upgrades
-sudo usermod -aG docker ubuntu          # volver a entrar para que aplique
-sudo mkdir -p /opt/globerce && sudo chown ubuntu:ubuntu /opt/globerce
+ssh -i ~/.ssh/globerce.pem ubuntu@<IP> "test -f /opt/globerce/.listo && echo listo"
 ```
-
-`unattended-upgrades` deja los parches de seguridad al día sin que nadie se
-acuerde de hacerlo.
 
 ---
 
@@ -197,7 +195,27 @@ conviene probar la restauración una vez.
 
 ---
 
-## 8. Lo que falta cuando crezca
+## 8. Lo que ya está creado
+
+| Recurso            | Valor                                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| Instancia          | `i-0827bfb44da35c4f4`, t4g.small, Ubuntu 24.04 ARM                   |
+| IP fija            | `18.227.142.167`                                                     |
+| Grupo de seguridad | `globerce-api`: 22 desde una IP, 80 y 443 abiertos                   |
+| Llave SSH          | `~/.ssh/globerce.pem` (solo en el portátil; AWS no la guarda)        |
+| Presupuesto        | `globerce-mensual`, avisa al 50 % de USD 25 y si se proyecta pasarlo |
+
+La IP de SSH es la del portátil el día que se creó. Si cambia (otra red), hay
+que actualizar la regla:
+
+```bash
+aws ec2 authorize-security-group-ingress --group-name globerce-api \
+  --protocol tcp --port 22 --cidr $(curl -s https://checkip.amazonaws.com)/32
+```
+
+---
+
+## 9. Lo que falta cuando crezca
 
 - **La base a RDS**, con respaldos automáticos y restauración a un punto en el
   tiempo. Solo cambian dos variables.

@@ -13,9 +13,11 @@ services:
   postgres:
     image: postgres:17-alpine
     container_name: globerce-postgres
+    # Del mismo archivo que la API: las claves se escriben una vez y no hay
+    # forma de que la del rol y la de `DATABASE_URL` se separen.
+    env_file: .env.production
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
       POSTGRES_DB: globerce
     volumes:
       - postgres_data:/var/lib/postgresql/data
