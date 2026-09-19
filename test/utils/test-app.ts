@@ -71,7 +71,7 @@ export interface TestApp {
     fields?: Record<string, string>,
   ): Promise<TestResponse<T>>;
   /** Registra una tienda con su dueña y devuelve la sesión recién emitida. */
-  register(label: string): Promise<Session>;
+  register(label: string, planCode?: string): Promise<Session>;
   /** Directorio donde el driver local deja las fotos durante esta prueba. */
   mediaDir: string;
   /** Texto del último correo enviado a esa dirección, o null. */
@@ -217,7 +217,7 @@ export async function startTestApp(): Promise<TestApp> {
       return mailer instanceof LogMailer ? (mailer.lastTo(email)?.text ?? null) : null;
     },
 
-    async register(label: string): Promise<Session> {
+    async register(label: string, planCode?: string): Promise<Session> {
       const email = `e2e-${label}-${run}@tienda.test`;
       const slug = `e2e-${label}-${run}`;
 
@@ -232,6 +232,7 @@ export async function startTestApp(): Promise<TestApp> {
         storeName: `Tienda ${label}`,
         storeSlug: slug,
         whatsappPhone: '573001234567',
+        ...(planCode ? { planCode } : {}),
       });
 
       if (status !== 201) {

@@ -1,5 +1,6 @@
-import { ApiProperty, PickType } from '@nestjs/swagger';
-import { IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
+import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Trim } from '@shared/dtos/transforms';
 
 /**
  * Alta de una tienda nueva junto con la cuenta de su dueña.
@@ -59,6 +60,17 @@ export class RegisterStoreDto {
   @IsString()
   @Matches(/^[0-9]{10,15}$/, { message: 'El número de WhatsApp debe tener entre 10 y 15 dígitos.' })
   whatsappPhone!: string;
+
+  /**
+   * Plan con el que arranca la prueba. Sin él, el más barato: quien no eligió
+   * no tiene por qué empezar en el caro.
+   */
+  @ApiPropertyOptional({ example: 'pro', description: 'Código del plan elegido en la web.' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Matches(/^[a-z0-9-]{2,40}$/, { message: 'El plan elegido no es válido.' })
+  planCode?: string;
 }
 
 /** Una tienda más para la cuenta de la sesión. */
@@ -66,6 +78,7 @@ export class CreateStoreDto extends PickType(RegisterStoreDto, [
   'storeName',
   'storeSlug',
   'whatsappPhone',
+  'planCode',
 ] as const) {
   @ApiProperty({ description: 'Refresh token de la sesión actual: se cierra y se emite otra.' })
   @IsString()

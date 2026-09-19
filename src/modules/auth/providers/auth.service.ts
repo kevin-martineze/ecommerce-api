@@ -40,6 +40,9 @@ const BASE_COLORS = [
 /** Días de prueba antes del primer cobro. */
 const TRIAL_DAYS = 14;
 
+/** Con qué plan arranca quien no eligió ninguno. */
+const DEFAULT_PLAN = 'basico';
+
 export interface RequestContext {
   userAgent?: string | null;
   ip?: string | null;
@@ -270,8 +273,17 @@ export class AuthService {
   private async provisionStore(
     tx: TenantClient,
     userId: string,
-    dto: Pick<RegisterStoreDto, 'storeName' | 'storeSlug' | 'whatsappPhone'>,
+    dto: Pick<RegisterStoreDto, 'storeName' | 'storeSlug' | 'whatsappPhone' | 'planCode'>,
   ) {
+    // El plan que eligió en la web. Uno retirado o inventado cae en el básico:
+    // no es motivo para que el registro falle después de crear la cuenta.
+    const chosen = dto.planCode
+      ? await tx.plan.findFirst({
+          where: { code: dto.planCode, active: true },
+          select: { code: true },
+        })
+      : null;
+
     const store = await tx.store.create({
       data: {
         name: dto.storeName.trim(),
@@ -294,7 +306,7 @@ export class AuthService {
     await tx.subscription.create({
       data: {
         storeId: store.id,
-        planCode: 'basico',
+        planCode: chosen?.code ?? DEFAULT_PLAN,
         status: 'TRIALING',
         currentPeriodEnd: daysFromNow(TRIAL_DAYS),
       },
@@ -351,7 +363,12 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
 
     if (existing) {
-      throw new ConflictException('Ya existe una cuenta con ese correo.');
+      // El código le dice al frontend bajo qué campo poner el mensaje; sin él
+      // tendría que adivinarlo leyendo el texto en español.
+      throw new ConflictException({
+        message: 'Ya existe una cuenta con ese correo.',
+        error: 'email_taken',
+      });
     }
   }
 
@@ -359,7 +376,10 @@ export class AuthService {
     const existing = await this.prisma.store.findUnique({ where: { slug }, select: { id: true } });
 
     if (existing) {
-      throw new ConflictException('Ese identificador de tienda ya está tomado.');
+      throw new ConflictException({
+        message: 'Esa dirección ya está tomada. Prueba con otra.',
+        error: 'slug_taken',
+      });
     }
   }
 }
