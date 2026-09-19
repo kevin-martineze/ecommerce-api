@@ -493,6 +493,32 @@ mismos textos de portada y los mismos pedidos. Por eso cambiarla es un PATCH a
 los ajustes y no una migración de datos, y por eso se puede cambiar cuantas
 veces se quiera sin perder nada.
 
+## 11.1 El asistente de la tienda
+
+`POST /public/:storeSlug/assistant` le responde a la clienta con el catálogo
+de esa tienda. La decisión de diseño que manda sobre todas las demás: el
+modelo no recibe el catálogo, recibe herramientas para consultarlo. De ahí
+salen tres propiedades que no se consiguen de otro modo.
+
+No puede inventar. Precio, talla y envío salen de una consulta —la misma que
+alimenta la vitrina, recortada a cinco resultados—, así que lo que no está en
+la base no se puede afirmar. Un asistente de tienda que improvisa un precio le
+crea un problema a la dueña, no al modelo.
+
+No puede mirar otra tienda. Las herramientas corren dentro de `forStore`, con
+el id que resolvió el slug: el aislamiento es el mismo del resto de la API, no
+uno nuevo escrito para esto.
+
+No se desboca en costo. Cada respuesta cuesta, y el tráfico lo pone la tienda,
+no quien paga el plan; por eso `plans.ai_replies_per_month` es un número y no
+un booleano, el consumo se cuenta en `ai_replies` y el driver sale apagado
+(`AI_DRIVER=none`). De la conversación no se guarda el texto: para contar el
+tope y medir el costo bastan los tokens, y esas conversaciones son de las
+clientas de la tienda.
+
+Cuando algo falla —sin cuota, sin respuesta, sin red— la salida es WhatsApp,
+que es como esta tienda cierra la venta igual.
+
 ## 12. Las fotos
 
 ### Por qué un almacenamiento intercambiable

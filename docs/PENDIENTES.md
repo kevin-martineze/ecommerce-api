@@ -40,7 +40,30 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       (`BILLING_DRIVER=manual`) o los simula la tienda. Es lo que convierte
       esto en negocio.
 
-## 2. Backend
+## 2. El asistente de la tienda
+
+Lo que ya está (2026-09-19): `POST /public/:storeSlug/assistant`, con
+herramientas sobre el catálogo y los envíos de esa tienda, tope mensual por
+plan (`plans.ai_replies_per_month`), consumo en `ai_replies` —tokens y fecha,
+nunca la conversación— y el chat en la vitrina con salida a WhatsApp. Sale
+apagado: `AI_DRIVER=none`.
+
+- [ ] **Encenderlo.** Falta la clave (`ANTHROPIC_API_KEY`) y medir el costo
+      real por conversación con `ai_replies`, que es para lo que se guarda.
+      Recomendado: `claude-haiku-4-5`; acá el modelo no tiene que saber de la
+      tienda, sino leer lo que devuelven las consultas.
+- [ ] **El consumo, en el panel.** La dueña no tiene dónde ver cuántas
+      respuestas lleva el mes. Los datos ya están.
+- [ ] **Apagarlo por tienda.** Hoy lo decide el plan; una dueña que no lo
+      quiera no tiene interruptor.
+- [ ] **Más herramientas, con cuidado.** Estado de un pedido es lo que más se
+      pregunta, y es justo lo que toca datos de una clienta: pide pensar qué
+      se le puede contar a quien escribe sin poder probar quién es.
+- [ ] **Redacción asistida de fichas en el panel.** La otra mitad de la idea:
+      ataca el catálogo vacío, cuesta por prenda y no por conversación, y la
+      dueña revisa antes de publicar.
+
+## 3. Backend
 
 - [x] **Slugs reservados.** (2026-09-19) La lista vive en los dos repos y cada
       archivo nombra al otro.
@@ -54,7 +77,7 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       `X-Forwarded-For` del frontend. Hoy la protege el secreto compartido;
       con IP pública conviene además que no sea alcanzable de frente.
 
-## 3. Frontend
+## 4. Frontend
 
 - [x] **README obsoleto.** (2026-09-19) Reescrito, y `supabase/` borrado: queda
       en la historia de git, que es donde tiene que estar.
@@ -81,7 +104,7 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
   las tiendas que crean: hoy se limpian a mano con psql porque la API no
   tiene endpoint para cerrar una tienda.
 
-## 4. Subdominios: lo que falta decidir
+## 5. Subdominios: lo que falta decidir
 
 - [ ] **DNS y certificado comodín.** `*.globerce.store` apuntando al frontend.
       La decisión pendiente está en `DEPLOY.md` § 2: Vercel pide manejar los
@@ -93,7 +116,7 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       no cambia nada: `localhost:5173` no es un dominio válido para una
       cookie.
 
-## 5. Operación
+## 6. Operación
 
 - [x] **CI.** (2026-09-19) Workflows en los dos repos, con los mismos gates
       que se corren en local. Los de la API levantan Postgres y el rol
@@ -113,5 +136,7 @@ Estos no los puedo cerrar yo solo:
 - **SMTP:** una cuenta de envío (Resend, SES, el que sea) y su clave.
 - **Pasarela:** con qué se va a cobrar en Colombia (Wompi, Mercado Pago…) y la
   cuenta de comercio.
+- **Clave del asistente:** una de console.anthropic.com en
+  `ecommerce-api/.env` (`ANTHROPIC_API_KEY`). Sin ella el chat no se ofrece.
 - **Datos de la empresa:** razón social, NIT y un correo de contacto, para las
   páginas legales.
