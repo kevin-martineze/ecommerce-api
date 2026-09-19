@@ -72,9 +72,14 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       cuando haya despliegue.
 - [x] **Cambiar de tienda.** (2026-09-19) Selector en la barra del panel, con
       POST: cambiar de tienda cambia el estado de la sesión, no es navegar.
-- [ ] **Pruebas de navegador.** 73 unitarias y nada que recorra comprar →
-      pedido → panel. Se ha verificado a mano en cada cambio, que no es lo
-      mismo.
+- [~] **Pruebas de navegador.** (2026-09-19) Cinco con Playwright, en
+  `shopping-sas/e2e`: la prenda que llega al carrito y sobrevive al
+  recargue, el registro completo con su onboarding, la validación campo por
+  campo sin llamar al servidor y el ojo de la contraseña. Corren en local
+  (`pnpm test:browser`) contra el sitio y la API de verdad. Falta meterlas
+  en CI, que necesita la API y su Postgres al lado, y una forma de borrar
+  las tiendas que crean: hoy se limpian a mano con psql porque la API no
+  tiene endpoint para cerrar una tienda.
 
 ## 4. Subdominios: lo que falta decidir
 
