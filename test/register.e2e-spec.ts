@@ -50,6 +50,17 @@ describe('Registro (e2e)', () => {
     expect(body.message).toContain('correo');
   });
 
+  it('una dirección reservada no se puede registrar', async () => {
+    // `www.globerce.store` es la plataforma: una tienda ahí existiría en la
+    // base y no habría dirección donde abrirla.
+    const { status } = await register({
+      email: api.email('registro-reservado'),
+      storeSlug: 'www',
+    });
+
+    expect(status).toBe(400);
+  });
+
   it('una dirección ya tomada dice que es la dirección', async () => {
     const { status, body } = await register({
       email: api.email('registro-libre'),

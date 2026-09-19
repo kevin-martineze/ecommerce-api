@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { Trim } from '@shared/dtos/transforms';
+import { RESERVED_SLUGS } from '@shared/tenancy/reserved-slugs';
 
 /**
  * Alta de una tienda nueva junto con la cuenta de su dueña.
@@ -51,6 +60,7 @@ export class RegisterStoreDto {
     message:
       'El identificador solo admite minúsculas, números y guiones, y debe empezar y terminar con letra o número.',
   })
+  @IsNotIn(RESERVED_SLUGS, { message: 'Esa dirección está reservada. Elige otra.' })
   storeSlug!: string;
 
   @ApiProperty({
