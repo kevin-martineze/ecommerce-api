@@ -87,6 +87,46 @@ describe('Plataforma (e2e)', () => {
     });
   });
 
+  describe('planes públicos', () => {
+    it('no lo tapa la ruta de tiendas, ni al revés', async () => {
+      // `/public/:storeSlug` está al lado: si los planes colgaran de ahí, una
+      // tienda llamada «plans» decidiría quién gana.
+      expect((await api.call('GET', '/public/plans')).status).toBe(404);
+      expect((await api.call('GET', `/public/${shop.slug}`)).status).toBe(200);
+    });
+
+    it('cualquiera ve los planes que se ofrecen, sin sesión', async () => {
+      const { status, body } = await api.call<{ code: string; priceCop: number }[]>(
+        'GET',
+        '/plans',
+      );
+
+      expect(status).toBe(200);
+      expect(body.map((plan) => plan.code)).toEqual(expect.arrayContaining(['basico', 'pro']));
+      expect(body.every((plan) => plan.priceCop > 0)).toBe(true);
+    });
+
+    it('un plan retirado no se anuncia, aunque las tiendas lo conserven', async () => {
+      await api.withOwner((client) =>
+        client.query(`update plans set active = false where code = 'pro'`),
+      );
+
+      try {
+        const { body } = await api.call<{ code: string }[]>('GET', '/plans');
+
+        expect(body.map((plan) => plan.code)).not.toContain('pro');
+        // La consola sí lo sigue viendo: hay tiendas en él.
+        const admin = await platform<{ code: string }[]>('GET', '/plans');
+
+        expect(admin.body.map((plan) => plan.code)).toContain('pro');
+      } finally {
+        await api.withOwner((client) =>
+          client.query(`update plans set active = true where code = 'pro'`),
+        );
+      }
+    });
+  });
+
   describe('pagos y estado', () => {
     it('registrar un pago activa la tienda, cierra la prueba y extiende el período', async () => {
       const { status, body } = await platform<StoreDetail>(
