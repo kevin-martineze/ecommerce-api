@@ -121,6 +121,30 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
       });
     });
 
+    it('la tienda nace en la plantilla editorial y puede cambiarla', async () => {
+      const inicial = await panel<{ template: string }>('GET', '/settings');
+
+      expect(inicial.body.template).toBe('editorial');
+
+      const { status, body } = await panel<{ template: string }>('PATCH', '/settings', {
+        template: 'boutique',
+      });
+
+      expect(status).toBe(200);
+      expect(body.template).toBe('boutique');
+
+      // La vitrina tiene que saber con qué diseño pintarse.
+      const publico = await pub<{ settings: { template: string } }>('');
+
+      expect(publico.body.settings.template).toBe('boutique');
+
+      await panel('PATCH', '/settings', { template: 'editorial' });
+    });
+
+    it('una plantilla que no existe se rechaza', async () => {
+      expect((await panel('PATCH', '/settings', { template: 'inventada' })).status).toBe(400);
+    });
+
     it('rechaza un WhatsApp con símbolos y una colección de otra tienda', async () => {
       expect((await panel('PATCH', '/settings', { whatsappPhone: '+57 300' })).status).toBe(400);
 

@@ -140,6 +140,11 @@ model StoreSettings {
   heroSubtitle     String? @map("hero_subtitle")
   heroCollectionId String? @map("hero_collection_id") @db.Uuid
 
+  /// Diseño de la vitrina: la elige la dueña al abrir la tienda. Texto y no
+  /// enum para que estrenar una plantilla no sea una migración de esquema; los
+  /// códigos válidos están en `src/shared/content/templates.ts`.
+  template String @default("editorial")
+
   updatedAt DateTime @updatedAt @map("updated_at")
 
   store          Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)

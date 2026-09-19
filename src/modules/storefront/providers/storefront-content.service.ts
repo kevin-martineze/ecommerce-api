@@ -6,6 +6,7 @@ import {
   SitemapDto,
   StorefrontDto,
 } from '@shared/dtos/storefront/content.dto';
+import { DEFAULT_TEMPLATE } from '@shared/content/templates';
 import { PrismaService } from '@db/prisma.service';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
 
@@ -59,6 +60,7 @@ export class StorefrontContentService {
           heroCollectionId: settings?.heroCollectionId ?? null,
           heroTitle: settings?.heroTitle ?? null,
           heroSubtitle: settings?.heroSubtitle ?? null,
+          template: settings?.template ?? DEFAULT_TEMPLATE,
         },
         categories,
         collections,

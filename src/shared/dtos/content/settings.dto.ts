@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -12,6 +13,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { STOREFRONT_TEMPLATES } from '@shared/content/templates';
 import { Trim } from '@shared/dtos/transforms';
 
 export class StoreSettingsDto {
@@ -38,6 +40,9 @@ export class StoreSettingsDto {
 
   @ApiProperty({ nullable: true })
   heroSubtitle!: string | null;
+
+  @ApiProperty({ enum: STOREFRONT_TEMPLATES, description: 'Diseño de la vitrina.' })
+  template!: string;
 
   @ApiProperty()
   updatedAt!: Date;
@@ -108,4 +113,10 @@ export class UpdateStoreSettingsDto {
   @IsString()
   @MaxLength(300, { message: 'Máximo 300 caracteres.' })
   heroSubtitle?: string | null;
+
+  @ApiPropertyOptional({ enum: STOREFRONT_TEMPLATES, description: 'Diseño de la vitrina.' })
+  @IsOptional()
+  @Trim()
+  @IsIn(STOREFRONT_TEMPLATES, { message: 'Elige una de las plantillas disponibles.' })
+  template?: string;
 }

@@ -50,6 +50,8 @@ export class StoreSettingsService {
           heroCollectionId: dto.heroCollectionId,
           heroTitle: blankToNull(dto.heroTitle),
           heroSubtitle: blankToNull(dto.heroSubtitle),
+          // Obligatoria: null no la vacía, no la toca.
+          template: dto.template ?? undefined,
         },
       });
 
@@ -74,6 +76,7 @@ function toDto(storeName: string, settings: StoreSettings): StoreSettingsDto {
     heroCollectionId: settings.heroCollectionId,
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,
+    template: settings.template,
     updatedAt: settings.updatedAt,
   };
 }
