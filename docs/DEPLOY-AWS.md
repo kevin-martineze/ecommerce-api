@@ -191,22 +191,57 @@ ssh ubuntu@<IP> "cd /opt/globerce && docker compose logs -f api"
 # Entrar a la base desde tu máquina (sin abrir el puerto en el grupo de seguridad)
 ssh -i ~/.ssh/globerce.pem -L 5433:localhost:5432 ubuntu@<IP>
 # y en otra terminal: psql postgresql://postgres:<clave>@localhost:5433/globerce
-
-# Vencimientos, una vez al día (crontab -e en la instancia)
-0 8 * * * cd /opt/globerce && /usr/bin/docker compose exec -T api node dist/tasks/reconcile >> /var/log/globerce-reconcile.log 2>&1
 ```
+
+### Las dos tareas diarias
+
+Están instaladas en `/etc/cron.d/globerce` y corren de madrugada, hora de
+Colombia:
+
+| Hora (UTC) | Qué hace                                                  | Log                               |
+| ---------- | --------------------------------------------------------- | --------------------------------- |
+| 08:10      | `scripts/backup-db.sh`: copia de la base                  | `/var/log/globerce-backup.log`    |
+| 08:40      | `dist/tasks/reconcile`: marca vencidas pruebas y períodos | `/var/log/globerce-reconcile.log` |
+
+Sin la segunda, una tienda que dejó de pagar se ve al día para siempre: en la
+API no hay reloj, el vencimiento lo marca esta tarea (ver ARCHITECTURE § 13).
+
+Ninguna de las dos usa `ts-node` ni `dotenv`: la imagen de producción no los
+trae. Las variables llegan del `env_file` de compose.
 
 ### Respaldos
 
-Sin RDS, los respaldos son nuestros. En la instancia, un cron diario:
+`scripts/backup-db.sh` hace el volcado con el `pg_dump` del propio contenedor
+de Postgres, lo comprime en `backups/` y comprueba que termine con la línea
+que `pg_dump` escribe al cerrar: es lo que distingue una copia entera de una
+cortada, y el día que haya que restaurar ya no hay forma de saberlo. Conserva
+las últimas 7 locales.
+
+Después intenta subirla con `dist/tasks/upload-backup`, que usa el SDK de S3
+que ya está en la imagen —una copia que depende de instalar algo en el
+servidor es una copia que alguien, algún día, no va a poder restaurar—. El
+destino es un bucket **distinto del de las fotos y privado**: el de las fotos
+se sirve público, y ahí un volcado de la base sería un volcado público.
 
 ```bash
-0 3 * * * docker exec globerce-postgres pg_dump -U postgres globerce | gzip > /opt/globerce/backups/globerce-$(date +\%F).sql.gz
+# En .env.production del servidor
+BACKUP_S3_BUCKET=globerce-backups   # privado, distinto al de las fotos
+BACKUP_KEEP=30                      # copias que se conservan afuera
 ```
 
-y subirlos a S3 con `aws s3 cp`, con una regla de ciclo de vida que borre los
-de más de 30 días. **Un respaldo que nadie ha restaurado no es un respaldo**:
-conviene probar la restauración una vez.
+El token de R2 de las fotos **no** sirve: está limitado a su bucket y responde
+`Access Denied` al crear otro. Hace falta un token con permiso sobre el bucket
+de respaldos. Mientras no lo haya, el script deja la copia local y lo dice.
+
+Restaurar:
+
+```bash
+gunzip -c backups/globerce-FECHA.sql.gz \
+  | docker compose exec -T postgres psql -U postgres -d globerce
+```
+
+**Un respaldo que nadie ha restaurado no es un respaldo**: conviene probar la
+restauración una vez, contra una base de prueba.
 
 ---
 

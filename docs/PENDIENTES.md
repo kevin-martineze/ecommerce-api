@@ -16,8 +16,13 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
 
 ## 1. Bloqueantes: sin esto no hay producto
 
-- [ ] **Copias de seguridad de la base.** Hoy la base vive en un volumen de la
-      instancia y nada la respalda. Es lo único irreversible de toda la lista.
+- [~] **Copias de seguridad de la base.** (2026-09-19) Hecho a medias:
+  `scripts/backup-db.sh` corre a diario en el servidor, comprueba que el
+  volcado esté entero y conserva las últimas 7 copias **locales**. Falta lo
+  de afuera: el token de R2 de las fotos no puede crear otro bucket
+  (`Access Denied`), así que necesito un bucket privado de respaldos y un
+  token con permiso. Hasta entonces, perder la instancia sigue siendo
+  perder los datos.
 - [ ] **Dominio comprado** (`globerce.store` para las tiendas, `globerce.cloud`
       para la API). Sin él no hay subdominios: ver § 4.
 - [ ] **Frontend desplegado.** Hasta que no lo esté, Globerce no existe para
@@ -26,8 +31,11 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       contraseña e invitar a alguien al equipo escriben en un log y nadie
       recibe nada. Necesita un SMTP y, en el servidor, `FRONTEND_URL`
       apuntando al frontend y no a la propia API.
-- [ ] **Cron de vencimientos.** Sin `platform:reconcile` diario, una prueba que
-      termina o un mes que vence se quedan como si estuvieran al día.
+- [x] **Cron de vencimientos.** (2026-09-19) En `/etc/cron.d/globerce`, 08:40
+      UTC. De paso salió un error que nadie había visto: las dos tareas
+      importaban `dotenv`, que es dependencia de desarrollo y no está en la
+      imagen, así que el comando documentado para el cron nunca habría
+      funcionado.
 - [ ] **Pasarela de pagos.** Hoy los pagos los registra la plataforma a mano
       (`BILLING_DRIVER=manual`) o los simula la tienda. Es lo que convierte
       esto en negocio.

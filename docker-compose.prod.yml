@@ -37,6 +37,10 @@ services:
     env_file: .env.production
     environment:
       PORT: 3000
+    volumes:
+      # Solo para que `scripts/backup-db.sh` pueda subir el volcado con el SDK
+      # que ya vive en esta imagen. La API no lee ni escribe nada de aquí.
+      - ./backups:/backups
     depends_on:
       postgres:
         condition: service_healthy

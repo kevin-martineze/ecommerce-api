@@ -14,3 +14,6 @@ coverage/
 .deploy.env
 # Variables del servidor: viven en la instancia, nunca acá
 .env.production
+
+# Copias de la base en el servidor (ver scripts/backup-db.sh).
+/backups

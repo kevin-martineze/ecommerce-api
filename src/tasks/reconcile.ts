@@ -1,5 +1,3 @@
-import 'dotenv/config';
-
 import { NestFactory } from '@nestjs/core';
 import { PlatformService } from '@modules/platform/providers/platform.service';
 
@@ -7,6 +5,11 @@ import { AppModule } from '../app.module';
 
 /**
  * Marca como vencidas las tiendas cuyo período o prueba terminó.
+ *
+ * No importa `dotenv`: en el servidor las variables llegan del `env_file` de
+ * compose, y en desarrollo las carga `ConfigModule`. `dotenv` es dependencia
+ * de desarrollo y no está en la imagen, así que importarlo aquí rompía
+ * justamente donde esta tarea tiene que correr.
  *
  *   pnpm platform:reconcile                          en desarrollo
  *   docker compose exec api node dist/tasks/reconcile  en el servidor

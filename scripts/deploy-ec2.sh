@@ -45,7 +45,7 @@ step "1/4 Copiando el código a $DEPLOY_HOST:$REMOTE_DIR"
 # construía bien y el contenedor moría al arrancar.
 rsync -az --delete \
   --exclude /node_modules --exclude /dist --exclude /.git --exclude /media \
-  --exclude '/.env*' --exclude /coverage --exclude /.deploy.env \
+  --exclude '/.env*' --exclude /coverage --exclude /.deploy.env --exclude /backups \
   -e "ssh ${SSH_OPTS[*]}" \
   ./ "$DEPLOY_HOST:$REMOTE_DIR/"
 
