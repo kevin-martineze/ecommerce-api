@@ -39,6 +39,11 @@ export class PublicSettingsDto {
 
   @ApiProperty({ enum: STOREFRONT_TEMPLATES, description: 'Con qué diseño se pinta la vitrina.' })
   template!: string;
+
+  @ApiProperty({
+    description: 'Si esta tienda ofrece asistente: lo decide su plan y la plataforma.',
+  })
+  assistant!: boolean;
 }
 
 export class PublicCollectionDto {

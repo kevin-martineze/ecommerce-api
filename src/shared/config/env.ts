@@ -90,6 +90,24 @@ const envSchema = z.object({
    * memoria para los tests: sirve en desarrollo, donde nadie quiere un SMTP.
    * `smtp` es cualquier proveedor que hable SMTP (Resend, SES, Postmark…).
    */
+  /**
+   * Asistente de la tienda. `none`: apagado en toda la plataforma, el chat ni
+   * siquiera aparece. `anthropic`: responde de verdad, y cuesta plata por
+   * conversación, así que enciéndelo sabiendo que los topes por plan están
+   * puestos.
+   */
+  AI_DRIVER: z.enum(['none', 'anthropic']).default('none'),
+  /** Solo con `AI_DRIVER=anthropic`. */
+  ANTHROPIC_API_KEY: z.string().min(10).optional(),
+  /**
+   * El modelo que contesta. Por defecto el pequeño: en este diseño el modelo
+   * no tiene que SABER de la tienda, sino leer lo que le devuelven las
+   * consultas y redactar. Cambiarlo es una variable, no un despliegue.
+   */
+  AI_MODEL: z.string().min(3).default('claude-haiku-4-5-20251001'),
+  /** Techo de la respuesta. Es un chat de tienda, no un ensayo. */
+  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(2000).default(400),
+
   MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
   /** `smtp://usuario:clave@host:587` o `smtps://…:465`. Solo con `MAIL_DRIVER=smtp`. */
   SMTP_URL: z.string().url().optional(),
@@ -138,6 +156,14 @@ const envSchemaWithRules = envSchema.superRefine((env, ctx) => {
       code: z.ZodIssueCode.custom,
       path: ['SMTP_URL'],
       message: 'Obligatoria cuando MAIL_DRIVER=smtp.',
+    });
+  }
+
+  if (env.AI_DRIVER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ANTHROPIC_API_KEY'],
+      message: 'Obligatoria cuando AI_DRIVER=anthropic.',
     });
   }
 

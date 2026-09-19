@@ -6,6 +6,7 @@ import {
   SitemapDto,
   StorefrontDto,
 } from '@shared/dtos/storefront/content.dto';
+import { Assistant } from '@shared/ai/assistant';
 import { DEFAULT_TEMPLATE } from '@shared/content/templates';
 import { PrismaService } from '@db/prisma.service';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
@@ -20,6 +21,7 @@ export class StorefrontContentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stores: PublicStoreResolver,
+    private readonly assistant: Assistant,
   ) {}
 
   /** Lo que el layout necesita en cada página: tienda, ajustes, categorías y colecciones. */
@@ -28,6 +30,14 @@ export class StorefrontContentService {
 
     return this.prisma.forStore(store.id, async (tx) => {
       const settings = await tx.storeSettings.findUnique({ where: { storeId: store.id } });
+
+      // El chat se ofrece solo si hay modelo encendido en la plataforma Y el
+      // plan de la tienda lo incluye. Es un booleano y no la cuota: cuánto le
+      // queda a la tienda es asunto de la tienda, no de quien la visita.
+      const subscription = await tx.subscription.findUnique({
+        where: { storeId: store.id },
+        select: { plan: { select: { aiRepliesPerMonth: true } } },
+      });
 
       const categories = await tx.category.findMany({
         where: { storeId: store.id, active: true },
@@ -61,6 +71,7 @@ export class StorefrontContentService {
           heroTitle: settings?.heroTitle ?? null,
           heroSubtitle: settings?.heroSubtitle ?? null,
           template: settings?.template ?? DEFAULT_TEMPLATE,
+          assistant: this.assistant.available && (subscription?.plan.aiRepliesPerMonth ?? 0) > 0,
         },
         categories,
         collections,

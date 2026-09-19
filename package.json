@@ -35,6 +35,7 @@
     "storage:push-local": "ts-node --transpile-only -r tsconfig-paths/register scripts/push-local-media.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
     "@aws-sdk/client-s3": "^3.1133.0",
     "@fastify/compress": "^8.0.1",
     "@fastify/cookie": "^11.0.2",

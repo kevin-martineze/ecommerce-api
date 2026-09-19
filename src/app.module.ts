@@ -5,8 +5,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from '@shared/config/env';
 import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
 import { FrontSecretGuard } from '@shared/guards/front-secret.guard';
+import { AiModule } from '@shared/ai/ai.module';
 import { MailModule } from '@shared/mail/mail.module';
 import { StorageModule } from '@shared/storage/storage.module';
+import { AssistantModule } from '@modules/assistant/assistant.module';
 import { AuthModule } from '@modules/auth/auth.module';
 import { CatalogModule } from '@modules/catalog/catalog.module';
 import { CommerceModule } from '@modules/commerce/commerce.module';
@@ -41,7 +43,9 @@ import { PrismaModule } from '@db/prisma.module';
     PrismaModule,
     StorageModule,
     MailModule,
+    AiModule,
     AuthModule,
+    AssistantModule,
     CatalogModule,
     ContentModule,
     CommerceModule,

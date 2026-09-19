@@ -7,6 +7,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { Test } from '@nestjs/testing';
 import fastifyMultipart from '@fastify/multipart';
 import { Client } from 'pg';
+import { Assistant } from '@shared/ai/assistant';
 import { buildValidationPipe } from '@shared/config/validation-pipe';
 import { FRONT_SECRET_HEADER } from '@shared/guards/front-secret.guard';
 import { LogMailer } from '@shared/mail/log-mailer';
@@ -85,7 +86,19 @@ export interface TestApp {
   close(): Promise<void>;
 }
 
-export async function startTestApp(): Promise<TestApp> {
+export interface TestAppOptions {
+  /**
+   * Sustituye el asistente por un doble.
+   *
+   * El de verdad llama a un modelo: cuesta plata, tarda y no responde igual
+   * dos veces. Lo que estas pruebas tienen que comprobar es lo de alrededor
+   * —el plan, el tope del mes, el aislamiento—, no que el modelo redacte
+   * bonito.
+   */
+  assistant?: Assistant;
+}
+
+export async function startTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   // Lo fija `setup-env.ts` antes de importar `AppModule`; ver allí por qué.
   const mediaDir = process.env.MEDIA_DIR;
 
@@ -93,7 +106,13 @@ export async function startTestApp(): Promise<TestApp> {
     throw new Error('MEDIA_DIR no está definida: falta test/setup-env.ts en jest-e2e.json.');
   }
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+
+  if (options.assistant) {
+    builder.overrideProvider(Assistant).useValue(options.assistant);
+  }
+
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
 
   app.setGlobalPrefix('v1');

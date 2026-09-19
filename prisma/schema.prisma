@@ -92,6 +92,7 @@ model Store {
 
   members         StoreMember[]
   settings        StoreSettings?
+  aiReplies       AiReply[]
   subscription    Subscription?
   payments        Payment[]
   categories      Category[]
@@ -121,6 +122,24 @@ model Store {
 ///
 /// El nombre visible NO se duplica acá: vive en `Store.name`. Tenerlo en dos
 /// lugares garantiza que algún día se contradigan.
+/// Una fila por respuesta del asistente. Sin el texto: las conversaciones son
+/// de las clientas de la tienda, y para contar el tope del plan y medir el
+/// costo bastan los tokens.
+model AiReply {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  inputTokens  Int @default(0) @map("input_tokens")
+  outputTokens Int @default(0) @map("output_tokens")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt(sort: Desc)])
+  @@map("ai_replies")
+}
+
 model StoreSettings {
   storeId String @id @map("store_id") @db.Uuid
 
