@@ -29,6 +29,8 @@ export function toOrderAdmin(order: Order): OrderAdminDto {
     total: order.total,
     whatsappOpenedAt: order.whatsappOpenedAt,
     adminNotes: order.adminNotes,
+    paymentStatus: order.paymentStatus,
+    paidAt: order.paidAt,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };
@@ -68,6 +70,8 @@ export function toPublicOrder(order: Order & { items: OrderItem[] }): PublicOrde
     discount: order.discount,
     total: order.total,
     whatsappOpenedAt: order.whatsappOpenedAt,
+    paymentStatus: order.paymentStatus,
+    paidAt: order.paidAt,
     createdAt: order.createdAt,
     items: order.items.map((item) => ({
       id: item.id,

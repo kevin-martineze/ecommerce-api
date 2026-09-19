@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OrderStatus } from '@prisma/client';
+import { OrderPaymentStatus, OrderStatus } from '@prisma/client';
 import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { QueryInt, Trim } from '@shared/dtos/transforms';
 
@@ -116,6 +116,15 @@ export class OrderAdminDto {
 
   @ApiProperty({ nullable: true })
   adminNotes!: string | null;
+
+  @ApiProperty({
+    enum: OrderPaymentStatus,
+    description: 'Cómo va el cobro. Una venta contra entrega va confirmada y sin pagar.',
+  })
+  paymentStatus!: OrderPaymentStatus;
+
+  @ApiProperty({ nullable: true })
+  paidAt!: Date | null;
 
   @ApiProperty()
   createdAt!: Date;

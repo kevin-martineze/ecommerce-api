@@ -151,6 +151,27 @@ const envSchema = z.object({
   WOMPI_EVENTS_SECRET: z.string().min(10).optional(),
 
   /**
+   * Dirección pública de esta API, con su prefijo.
+   *
+   * Es la que cada tienda pega en su panel de la pasarela para que le avise de
+   * los pagos, así que tiene que ser alcanzable desde internet. Sale del
+   * entorno y no del `Host` de la petición: el `Host` lo pone quien llama.
+   */
+  PUBLIC_API_URL: z
+    .string()
+    .url()
+    .default('http://localhost:3000/v1')
+    .transform(stripTrailingSlash),
+
+  /**
+   * Con esto se cifran las llaves de cobro de CADA tienda antes de guardarlas.
+   * Son secretos ajenos: quien los tenga puede mover la plata de esa tienda.
+   * Cambiarlo deja ilegibles las llaves ya guardadas y cada tienda tendrá que
+   * volver a conectarse.
+   */
+  PAYMENTS_SECRET: z.string().min(32).optional(),
+
+  /**
    * Secreto que el frontend manda en `x-globerce-key`. Con él puesto, la API
    * solo atiende a quien lo conozca (ver FrontSecretGuard). Vacío en
    * desarrollo y en los tests; obligatorio en cuanto la API tenga IP pública.

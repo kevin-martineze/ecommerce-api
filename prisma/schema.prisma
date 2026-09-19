@@ -93,6 +93,7 @@ model Store {
   members         StoreMember[]
   settings        StoreSettings?
   aiReplies       AiReply[]
+  paymentAccount  StorePaymentAccount?
   subscription    Subscription?
   payments        Payment[]
   categories      Category[]
@@ -138,6 +139,28 @@ model AiReply {
 
   @@index([storeId, createdAt(sort: Desc)])
   @@map("ai_replies")
+}
+
+/// Con qué cobra una tienda sus propios pedidos.
+///
+/// Las llaves secretas van cifradas: son de la tienda, y quien las tenga puede
+/// mover su plata. La pública no, que para eso es pública.
+model StorePaymentAccount {
+  storeId String @id @map("store_id") @db.Uuid
+
+  provider String @default("wompi")
+
+  publicKey             String  @map("public_key")
+  privateKeySealed      String  @map("private_key_sealed")
+  integritySecretSealed String  @map("integrity_secret_sealed")
+  eventsSecretSealed    String  @map("events_secret_sealed")
+
+  active    Boolean  @default(true)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("store_payment_accounts")
 }
 
 model StoreSettings {
@@ -766,6 +789,15 @@ enum OrderStatus {
   @@map("order_status")
 }
 
+enum OrderPaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+
+  @@map("order_payment_status")
+}
+
 model Order {
   id      String @id @default(uuid()) @db.Uuid
   storeId String @map("store_id") @db.Uuid
@@ -798,6 +830,14 @@ model Order {
   subtotal Int
   discount Int @default(0)
   total    Int
+
+  /// Cómo va el COBRO, que no es cómo va el pedido: una venta contra entrega
+  /// está confirmada y sin pagar, y una pagada puede terminar cancelada.
+  paymentStatus    OrderPaymentStatus @default(UNPAID) @map("payment_status")
+  /// Identificador de la transacción en la pasarela. Único: una transacción no
+  /// se aplica dos veces aunque la pasarela reintente.
+  paymentReference String?            @unique @map("payment_reference")
+  paidAt           DateTime?          @map("paid_at") @db.Timestamptz(6)
 
   whatsappOpenedAt DateTime? @map("whatsapp_opened_at")
   adminNotes       String?   @map("admin_notes")

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   CreateRestockRequestDto,
   HomeDto,
@@ -8,6 +8,7 @@ import {
 } from '@shared/dtos/storefront/content.dto';
 import { Assistant } from '@shared/ai/assistant';
 import { DEFAULT_TEMPLATE } from '@shared/content/templates';
+import { PaymentGateway } from '@shared/payments/gateway';
 import { PrismaService } from '@db/prisma.service';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
 
@@ -22,6 +23,7 @@ export class StorefrontContentService {
     private readonly prisma: PrismaService,
     private readonly stores: PublicStoreResolver,
     private readonly assistant: Assistant,
+    @Inject(PaymentGateway) private readonly gateway: PaymentGateway | null,
   ) {}
 
   /** Lo que el layout necesita en cada página: tienda, ajustes, categorías y colecciones. */
@@ -37,6 +39,14 @@ export class StorefrontContentService {
       const subscription = await tx.subscription.findUnique({
         where: { storeId: store.id },
         select: { plan: { select: { aiRepliesPerMonth: true } } },
+      });
+
+      // Cobrar en línea depende de dos cosas: que la plataforma tenga pasarela
+      // y que ESTA tienda haya conectado su cuenta. La plata de la venta es
+      // suya, así que sin su cuenta no hay cobro.
+      const paymentAccount = await tx.storePaymentAccount.findUnique({
+        where: { storeId: store.id },
+        select: { active: true },
       });
 
       const categories = await tx.category.findMany({
@@ -72,6 +82,7 @@ export class StorefrontContentService {
           heroSubtitle: settings?.heroSubtitle ?? null,
           template: settings?.template ?? DEFAULT_TEMPLATE,
           assistant: this.assistant.available && (subscription?.plan.aiRepliesPerMonth ?? 0) > 0,
+          onlinePayments: this.gateway !== null && Boolean(paymentAccount?.active),
         },
         categories,
         collections,

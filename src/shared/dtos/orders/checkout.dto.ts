@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OrderStatus } from '@prisma/client';
+import { OrderPaymentStatus, OrderStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -362,6 +362,15 @@ export class PublicOrderDto {
 
   @ApiProperty({ nullable: true })
   whatsappOpenedAt!: Date | null;
+
+  @ApiProperty({
+    enum: OrderPaymentStatus,
+    description: 'Cómo va el cobro, que no es cómo va el pedido.',
+  })
+  paymentStatus!: OrderPaymentStatus;
+
+  @ApiProperty({ nullable: true })
+  paidAt!: Date | null;
 
   @ApiProperty()
   createdAt!: Date;

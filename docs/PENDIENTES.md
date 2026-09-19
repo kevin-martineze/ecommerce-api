@@ -36,9 +36,12 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       importaban `dotenv`, que es dependencia de desarrollo y no está en la
       imagen, así que el comando documentado para el cron nunca habría
       funcionado.
-- [ ] **Pasarela de pagos.** Hoy los pagos los registra la plataforma a mano
-      (`BILLING_DRIVER=manual`) o los simula la tienda. Es lo que convierte
-      esto en negocio.
+- [~] **Pasarela de pagos.** (2026-09-19) Construida entera, contra Wompi y
+  con una pasarela simulada para probar sin cuenta: la tienda paga su plan
+  (`/subscription/checkout` + evento firmado) y cada tienda cobra sus
+  pedidos con su propia cuenta (`/payments/events/:storeId`). Falta lo que
+  no puedo hacer yo: abrir la cuenta de comercio de Globerce, poner las
+  cuatro llaves en el servidor y cambiar `PAYMENTS_DRIVER` a `wompi`.
 
 ## 2. El asistente de la tienda
 
@@ -63,7 +66,19 @@ apagado: `AI_DRIVER=none`.
       ataca el catálogo vacío, cuesta por prenda y no por conversación, y la
       dueña revisa antes de publicar.
 
-## 3. Backend
+## 3. Pagos: lo que falta
+
+- [ ] **Cobro recurrente.** Hoy la dueña paga su mes a mano cada vez. Wompi lo
+      permite guardando la tarjeta (`payment_source`) y cobrando desde el
+      servidor; hace falta decidir cuándo se cobra y qué pasa si falla.
+- [ ] **Recibos.** Ni la tienda ni la clienta reciben un correo cuando el pago
+      entra. Depende del SMTP, que también falta.
+- [ ] **Conciliación.** Si un evento se pierde, nadie lo nota. Con la API de
+      Wompi se puede consultar una transacción y cerrar el hueco; el cron
+      diario es el sitio.
+- [ ] **Devoluciones.** No hay forma de devolver un pago desde el panel.
+
+## 4. Backend
 
 - [x] **Slugs reservados.** (2026-09-19) La lista vive en los dos repos y cada
       archivo nombra al otro.
@@ -77,7 +92,7 @@ apagado: `AI_DRIVER=none`.
       `X-Forwarded-For` del frontend. Hoy la protege el secreto compartido;
       con IP pública conviene además que no sea alcanzable de frente.
 
-## 4. Frontend
+## 5. Frontend
 
 - [x] **README obsoleto.** (2026-09-19) Reescrito, y `supabase/` borrado: queda
       en la historia de git, que es donde tiene que estar.
@@ -104,7 +119,7 @@ apagado: `AI_DRIVER=none`.
   las tiendas que crean: hoy se limpian a mano con psql porque la API no
   tiene endpoint para cerrar una tienda.
 
-## 5. Subdominios: lo que falta decidir
+## 6. Subdominios: lo que falta decidir
 
 - [ ] **DNS y certificado comodín.** `*.globerce.store` apuntando al frontend.
       La decisión pendiente está en `DEPLOY.md` § 2: Vercel pide manejar los
@@ -116,7 +131,7 @@ apagado: `AI_DRIVER=none`.
       no cambia nada: `localhost:5173` no es un dominio válido para una
       cookie.
 
-## 6. Operación
+## 7. Operación
 
 - [x] **CI.** (2026-09-19) Workflows en los dos repos, con los mismos gates
       que se corren en local. Los de la API levantan Postgres y el rol
@@ -134,8 +149,9 @@ Estos no los puedo cerrar yo solo:
 - **Dominio:** comprarlo (o decidir dónde) para poder configurar DNS y
   certificados.
 - **SMTP:** una cuenta de envío (Resend, SES, el que sea) y su clave.
-- **Pasarela:** con qué se va a cobrar en Colombia (Wompi, Mercado Pago…) y la
-  cuenta de comercio.
+- **Pasarela:** la cuenta de comercio de Globerce en Wompi y sus cuatro llaves
+  (`WOMPI_*`), más `PAYMENTS_SECRET` y `PUBLIC_API_URL` en el servidor. Cada
+  tienda abre la suya y la conecta desde su panel.
 - **Clave del asistente:** una de console.anthropic.com en
   `ecommerce-api/.env` (`ANTHROPIC_API_KEY`). Sin ella el chat no se ofrece.
 - **Datos de la empresa:** razón social, NIT y un correo de contacto, para las

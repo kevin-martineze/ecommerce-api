@@ -519,6 +519,36 @@ clientas de la tienda.
 Cuando algo falla —sin cuota, sin respuesta, sin red— la salida es WhatsApp,
 que es como esta tienda cierra la venta igual.
 
+## 11.2 Los pagos de cada tienda
+
+La plata de una venta es de la tienda, no de Globerce. Cada dueña conecta su
+propia cuenta de comercio y el cobro sale con SUS llaves: así no somos
+agregador —no manejamos dinero ajeno—, no hace falta figura ni licencia para
+eso, y ninguna quiebra nuestra congela la plata de nadie. A cambio, cada tienda
+pasa una vez por el KYC de la pasarela.
+
+Las llaves secretas se guardan cifradas con AES-256-GCM
+(`shared/payments/secret-box.ts`). Son secretos ajenos: quien los tenga puede
+mover la plata de esa tienda, y un volcado robado no puede ser también el robo
+de todas las cuentas de comercio. La pública no se cifra: viaja en cada enlace
+de pago. Ninguna secreta vuelve a salir de la API, ni para confirmar que se
+guardó.
+
+El monto sale del pedido que está en la base, nunca de la petición, y la
+dirección de vuelta tiene que ser un host nuestro: sin esa comprobación, quien
+arma el cobro elige a dónde va la clienta justo después de escribir los datos
+de su tarjeta.
+
+Cada tienda tiene su propia URL de eventos (`/payments/events/:storeId`),
+que es la que pega en el panel de la pasarela. Saber a qué tienda apunta esa
+URL no autoriza nada: lo que autentica el evento es la firma, y se comprueba
+con el secreto de ESA tienda.
+
+El pedido gana un estado de cobro propio, separado de su estado. Una venta
+contra entrega está confirmada y sin pagar; una pagada puede terminar
+cancelada. Y pagar no confirma el pedido: confirmar es una decisión de la
+tienda —tiene que ver si puede despacharlo— y el pago no la reemplaza.
+
 ## 12. Las fotos
 
 ### Por qué un almacenamiento intercambiable
