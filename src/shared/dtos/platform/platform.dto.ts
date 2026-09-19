@@ -60,6 +60,17 @@ export class PlanUsageDto {
   ordersThisMonth!: number;
 }
 
+export class SubscriptionCheckoutDto {
+  @ApiProperty({ description: 'La página de la pasarela. Se abre en el navegador de la dueña.' })
+  url!: string;
+
+  @ApiProperty({ description: 'Nuestra referencia del cobro. Vuelve en el evento de la pasarela.' })
+  reference!: string;
+
+  @ApiProperty()
+  amountCop!: number;
+}
+
 export class SubscriptionPaymentDto {
   @ApiProperty()
   id!: string;

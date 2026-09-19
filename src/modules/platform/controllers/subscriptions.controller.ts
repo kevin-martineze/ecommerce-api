@@ -3,7 +3,11 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AllowedWithoutSubscription } from '@shared/decorators/billing-route.decorator';
 import { Roles } from '@shared/decorators/roles.decorator';
 import { StoreRoute } from '@shared/decorators/store-route.decorator';
-import { ActivatePlanDto, SubscriptionSummaryDto } from '@shared/dtos/platform/platform.dto';
+import {
+  ActivatePlanDto,
+  SubscriptionCheckoutDto,
+  SubscriptionSummaryDto,
+} from '@shared/dtos/platform/platform.dto';
 
 import { SubscriptionsService } from '../providers/subscriptions.service';
 
@@ -19,18 +23,17 @@ export class SubscriptionsController {
     return this.subscriptions.summary(storeId);
   }
 
-  @Post('activate')
+  @Post('checkout')
   @Roles('OWNER')
   // Es justo lo que hay que poder hacer con el plan vencido.
   @AllowedWithoutSubscription()
   @ApiOperation({
-    summary:
-      'Activa el plan y lo cobra. Solo con BILLING_DRIVER=simulated mientras no hay pasarela.',
+    summary: 'Empieza el cobro del plan y devuelve a dónde ir a pagar.',
   })
-  activate(
+  checkout(
     @Param('storeId') storeId: string,
     @Body() dto: ActivatePlanDto,
-  ): Promise<SubscriptionSummaryDto> {
-    return this.subscriptions.activate(storeId, dto.planCode);
+  ): Promise<SubscriptionCheckoutDto> {
+    return this.subscriptions.checkout(storeId, dto.planCode);
   }
 }

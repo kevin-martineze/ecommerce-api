@@ -90,6 +90,11 @@ const envSchema = z.object({
    * memoria para los tests: sirve en desarrollo, donde nadie quiere un SMTP.
    * `smtp` es cualquier proveedor que hable SMTP (Resend, SES, Postmark…).
    */
+  MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
+  /** `smtp://usuario:clave@host:587` o `smtps://…:465`. Solo con `MAIL_DRIVER=smtp`. */
+  SMTP_URL: z.string().url().optional(),
+  MAIL_FROM: z.string().min(3).default('Globerce <no-responder@globerce.local>'),
+
   /**
    * Asistente de la tienda. `none`: apagado en toda la plataforma, el chat ni
    * siquiera aparece. `anthropic`: responde de verdad, y cuesta plata por
@@ -108,11 +113,6 @@ const envSchema = z.object({
   /** Techo de la respuesta. Es un chat de tienda, no un ensayo. */
   AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(2000).default(400),
 
-  MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
-  /** `smtp://usuario:clave@host:587` o `smtps://…:465`. Solo con `MAIL_DRIVER=smtp`. */
-  SMTP_URL: z.string().url().optional(),
-  MAIL_FROM: z.string().min(3).default('Globerce <no-responder@globerce.local>'),
-
   /**
    * Base de los enlaces que viajan por correo (recuperar contraseña, aceptar
    * invitación). Sale del entorno y nunca de la petición: armar el enlace con
@@ -122,17 +122,33 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url().default('http://localhost:5173').transform(stripTrailingSlash),
 
   /**
-   * Cómo se cobra la mensualidad.
+   * Con qué se cobra: la mensualidad de las tiendas y, con las llaves de cada
+   * una, los pedidos de sus clientas.
    *
-   * `manual` es lo real hoy: los pagos los registra la plataforma desde su
+   * `none` es lo de siempre: los pagos los registra la plataforma desde su
    * consola cuando la tienda transfiere. `simulated` abre una pantalla de pago
-   * de mentira en el panel, que activa el plan sin cobrar nada: sirve para
-   * probar el flujo completo mientras no hay pasarela.
+   * de mentira que aprueba sin cobrar —sirve para probar el flujo entero y
+   * para enseñar el producto—. `wompi` cobra de verdad.
    *
-   * Por defecto `manual`, a propósito. Un endpoint que regala suscripciones no
-   * puede quedar encendido en producción porque alguien olvidó apagarlo.
+   * Por defecto `none`, a propósito. Una pantalla que regala suscripciones no
+   * puede quedar encendida en producción porque alguien olvidó apagarla.
    */
-  BILLING_DRIVER: z.enum(['manual', 'simulated']).default('manual'),
+  PAYMENTS_DRIVER: z.enum(['none', 'simulated', 'wompi']).default('none'),
+
+  /** El Checkout Web de Wompi. Cambia a `sandbox` para probar con llaves de prueba. */
+  WOMPI_CHECKOUT_URL: z.string().url().default('https://checkout.wompi.co/p/'),
+
+  /**
+   * Las llaves de la PLATAFORMA: con ellas se cobra la mensualidad de las
+   * tiendas. Las de cada tienda, con las que cobra sus propios pedidos, viven
+   * cifradas en la base y no acá.
+   */
+  WOMPI_PUBLIC_KEY: z.string().min(10).optional(),
+  WOMPI_PRIVATE_KEY: z.string().min(10).optional(),
+  /** Firma el enlace de pago: sin esto, el monto se podría cambiar en la URL. */
+  WOMPI_INTEGRITY_SECRET: z.string().min(10).optional(),
+  /** Firma los eventos que llegan: es lo que distingue a Wompi de cualquiera. */
+  WOMPI_EVENTS_SECRET: z.string().min(10).optional(),
 
   /**
    * Secreto que el frontend manda en `x-globerce-key`. Con él puesto, la API
@@ -157,6 +173,23 @@ const envSchemaWithRules = envSchema.superRefine((env, ctx) => {
       path: ['SMTP_URL'],
       message: 'Obligatoria cuando MAIL_DRIVER=smtp.',
     });
+  }
+
+  if (env.PAYMENTS_DRIVER === 'wompi') {
+    for (const key of [
+      'WOMPI_PUBLIC_KEY',
+      'WOMPI_PRIVATE_KEY',
+      'WOMPI_INTEGRITY_SECRET',
+      'WOMPI_EVENTS_SECRET',
+    ] as const) {
+      if (!env[key]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: 'Obligatoria cuando PAYMENTS_DRIVER=wompi.',
+        });
+      }
+    }
   }
 
   if (env.AI_DRIVER === 'anthropic' && !env.ANTHROPIC_API_KEY) {

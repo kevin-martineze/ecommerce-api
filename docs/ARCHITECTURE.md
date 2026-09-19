@@ -611,18 +611,30 @@ fin del pago si ese fin es posterior; un pago atrasado no lo acorta.
 
 ### Cobrarse sola
 
-`POST /stores/:storeId/subscription/activate` deja que la dueña active y pague
-su plan sin intermediarios. Mientras no hay pasarela el cobro es de mentira
-—registra un pago con `method: 'simulado'`—, así que la ruta solo responde con
-`BILLING_DRIVER=simulated`; en `manual` (el valor por defecto) devuelve 400 y el
-panel muestra el teléfono. El flag existe para que un endpoint que regala
-suscripciones no quede encendido por descuido en producción.
+`POST /stores/:storeId/subscription/checkout` devuelve a dónde mandar a la
+dueña a pagar. Lo que se cobra no viene de la petición: el monto sale del plan
+que hay en la base, porque si viniera de afuera cualquiera pediría pagar cien
+pesos por el Pro.
 
-Deja el mismo rastro que dejará el cobro de verdad: un pago registrado y el
-período extendido desde donde termina el vigente. Cuando llegue la pasarela
-cambia quién llama a este método —el webhook del cobro—, no lo que hace. Una
-tienda suspendida no puede pagar: cobrarle sería cobrarle por algo que el pago
-no le devuelve.
+Lo que pone el plan al día **no** es que la dueña vuelva a la página. Puede
+volver sin haber pagado, o no volver nunca: el navegador de quien paga no es
+una fuente de verdad. Lo confirma el evento firmado que manda la pasarela a
+`POST /payments/events`, que es la única superficie de la API que atiende a
+alguien que no es nuestro frontend —va `@OpenRoute()`, porque Wompi no conoce
+el secreto compartido y no tiene por qué—. Lo que la autentica es la firma del
+propio evento.
+
+La referencia (`sub-<storeId>-<plan>-<azar>`) es lo que dice a qué corresponde
+ese pago, porque el evento llega sin sesión. Un pago por menos del precio del
+plan no compra un mes, y el mismo pago dos veces tampoco: la referencia de la
+transacción se guarda en `payments` y si ya estaba, no se aplica de nuevo —las
+pasarelas reintentan—.
+
+`PAYMENTS_DRIVER` decide con qué se cobra: `none` (los pagos los registra la
+plataforma a mano, que es como estaba antes), `simulated` (una pantalla de
+mentira que aprueba sin cobrar, para probar el flujo entero y para enseñar el
+producto) y `wompi`. Sale en `none` a propósito: una pantalla que regala
+suscripciones no puede quedar encendida porque alguien olvidó apagarla.
 
 ### El vencimiento
 

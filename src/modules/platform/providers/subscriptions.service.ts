@@ -1,15 +1,20 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Payment, Plan } from '@prisma/client';
+import { Payment, Plan, StoreStatus } from '@prisma/client';
 import { Env } from '@shared/config/env';
+import { PaymentEvent, PaymentGateway } from '@shared/payments/gateway';
 import {
   PlanDto,
+  SubscriptionCheckoutDto,
   SubscriptionPaymentDto,
   SubscriptionSummaryDto,
 } from '@shared/dtos/platform/platform.dto';
@@ -24,14 +29,16 @@ const PERIOD_DAYS = 30;
 /** Cuántos pagos se le muestran a la tienda. Los demás los tiene la plataforma. */
 const PAYMENTS_SHOWN = 12;
 
+/** Lo que antecede a la referencia del cobro de un plan. */
+const SUB_PREFIX = 'sub';
+
 /**
- * El plan visto desde la tienda: qué tiene, cuánto lleva usado y cómo se
- * activa.
+ * El plan visto desde la tienda: qué tiene, cuánto lleva usado y cómo se paga.
  *
- * Mientras no haya pasarela, activar es un pago simulado que solo existe con
- * `BILLING_DRIVER=simulated`. Deja el mismo rastro que dejará el cobro de
- * verdad —un pago registrado y el período extendido—, así que cuando llegue la
- * pasarela cambia quién llama a este método, no lo que hace.
+ * Pagar es ir a la pasarela y volver; lo que decide que el plan quedó al día
+ * NO es que la dueña vuelva a la página, sino el evento firmado que manda la
+ * pasarela. Por eso `aplicarPago` es el único camino que extiende el período,
+ * y da igual si lo llama el evento de Wompi o la pantalla simulada.
  */
 @Injectable()
 export class SubscriptionsService {
@@ -40,10 +47,12 @@ export class SubscriptionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService<Env, true>,
+    @Inject(PaymentGateway) private readonly gateway: PaymentGateway | null,
   ) {}
 
+  /** Si la tienda puede pagar sola, sin escribirle a nadie. */
   private get selfService(): boolean {
-    return this.config.get('BILLING_DRIVER', { infer: true }) === 'simulated';
+    return this.gateway !== null;
   }
 
   async summary(storeId: string): Promise<SubscriptionSummaryDto> {
@@ -98,22 +107,147 @@ export class SubscriptionsService {
    * decisión de la plataforma y deshacerla es otra, así que cobrarle sería
    * cobrar por algo que no se le va a devolver.
    */
-  async activate(storeId: string, planCode: string): Promise<SubscriptionSummaryDto> {
-    if (!this.selfService) {
+  /**
+   * Empieza el cobro del plan: devuelve a dónde mandar a la dueña a pagar.
+   *
+   * Lo que se cobra NO viene de la petición: el monto sale del plan que hay en
+   * la base. Si viniera de afuera, cualquiera pediría pagar cien pesos por el
+   * Pro.
+   *
+   * La referencia lleva la tienda y el plan porque el evento vuelve sin
+   * sesión: es lo único que dirá a qué corresponde ese pago.
+   */
+  async checkout(storeId: string, planCode: string): Promise<SubscriptionCheckoutDto> {
+    const gateway = this.gateway;
+
+    if (!gateway) {
       throw new BadRequestException(
         'Los pagos en línea todavía no están disponibles. Escríbenos y activamos tu plan.',
       );
     }
 
-    const plan = await this.prisma.plan.findUnique({ where: { code: planCode } });
+    const plan = await this.plan(planCode);
+    const store = await this.storeForPayment(storeId);
+    const reference = `${SUB_PREFIX}-${storeId}-${plan.code}-${randomUUID().slice(0, 8)}`;
+
+    const session = gateway.checkout({
+      reference,
+      amountCop: plan.priceCop,
+      description: `Globerce · plan ${plan.name} · ${store.name}`,
+      redirectUrl: `${this.config.get('FRONTEND_URL', { infer: true })}/admin/plan`,
+    });
+
+    this.logger.log(`Cobro del plan ${plan.code} iniciado para la tienda ${storeId}`);
+
+    return { url: session.url, reference: session.reference, amountCop: plan.priceCop };
+  }
+
+  /**
+   * Aplica un pago que la pasarela dio por bueno.
+   *
+   * Es el ÚNICO camino que extiende el período. Lo llama el evento firmado de
+   * la pasarela; que la dueña vuelva a la página no prueba nada —puede volver
+   * sin haber pagado, o no volver nunca—.
+   *
+   * Repetir el mismo pago no suma dos meses: la referencia de la transacción
+   * es única en `payments`, y si ya estaba, este pago ya se aplicó.
+   */
+  async applyPayment(event: PaymentEvent): Promise<void> {
+    if (event.status !== 'approved') return;
+
+    const destino = parseReference(event.reference);
+
+    if (!destino) {
+      this.logger.warn(`Pago ${event.transactionId} con una referencia que no reconozco.`);
+
+      return;
+    }
+
+    const plan = await this.plan(destino.planCode);
+
+    // El monto tiene que ser el del plan: un pago por menos no compra un mes.
+    if (event.amountCop < plan.priceCop) {
+      this.logger.warn(
+        `Pago ${event.transactionId} por ${event.amountCop} cuando el plan ${plan.code} vale ${plan.priceCop}.`,
+      );
+
+      return;
+    }
+
+    const store = await this.storeForPayment(destino.storeId);
+
+    const aplicado = await this.prisma.forStore(destino.storeId, async (tx) => {
+      const yaEstaba = await tx.payment.findFirst({
+        where: { storeId: destino.storeId, reference: event.transactionId },
+        select: { id: true },
+      });
+
+      if (yaEstaba) return false;
+
+      const subscription = await tx.subscription.findUnique({
+        where: { storeId: destino.storeId },
+      });
+
+      if (!subscription) {
+        throw new NotFoundException('La tienda no tiene suscripción.');
+      }
+
+      const today = startOfDay(new Date());
+      const desde =
+        subscription.currentPeriodEnd > today ? nextDay(subscription.currentPeriodEnd) : today;
+      const hasta = addDays(desde, PERIOD_DAYS - 1);
+
+      await tx.payment.create({
+        data: {
+          storeId: destino.storeId,
+          amountCop: event.amountCop,
+          periodStart: desde,
+          periodEnd: hasta,
+          method: event.method,
+          reference: event.transactionId,
+        },
+      });
+
+      await tx.subscription.update({
+        where: { storeId: destino.storeId },
+        data: { planCode: plan.code, status: 'ACTIVE', currentPeriodEnd: hasta },
+      });
+
+      return true;
+    });
+
+    if (!aplicado) {
+      this.logger.log(`Pago ${event.transactionId} repetido: no se aplica dos veces.`);
+
+      return;
+    }
+
+    if (store.status !== 'SUSPENDED') {
+      await this.prisma.store.update({
+        where: { id: destino.storeId },
+        // Pasó a pago: la prueba deja de existir.
+        data: { status: 'ACTIVE', trialEndsAt: null },
+      });
+    }
+
+    this.logger.log(`Plan ${plan.code} al día para la tienda ${destino.storeId} (${event.method})`);
+  }
+
+  private async plan(code: string): Promise<Plan> {
+    const plan = await this.prisma.plan.findUnique({ where: { code } });
 
     if (!plan || !plan.active) {
       throw new BadRequestException('Ese plan no existe o ya no se ofrece.');
     }
 
+    return plan;
+  }
+
+  /** La tienda, y que esté en condiciones de pagar. */
+  private async storeForPayment(storeId: string): Promise<{ name: string; status: StoreStatus }> {
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
-      select: { status: true },
+      select: { name: true, status: true },
     });
 
     if (!store) {
@@ -129,43 +263,7 @@ export class SubscriptionsService {
       });
     }
 
-    await this.prisma.forStore(storeId, async (tx) => {
-      const subscription = await tx.subscription.findUnique({ where: { storeId } });
-
-      if (!subscription) {
-        throw new NotFoundException('La tienda no tiene suscripción.');
-      }
-
-      const today = startOfDay(new Date());
-      const desde =
-        subscription.currentPeriodEnd > today ? nextDay(subscription.currentPeriodEnd) : today;
-      const hasta = addDays(desde, PERIOD_DAYS - 1);
-
-      await tx.payment.create({
-        data: {
-          storeId,
-          amountCop: plan.priceCop,
-          periodStart: desde,
-          periodEnd: hasta,
-          method: 'simulado',
-        },
-      });
-
-      await tx.subscription.update({
-        where: { storeId },
-        data: { planCode: plan.code, status: 'ACTIVE', currentPeriodEnd: hasta },
-      });
-    });
-
-    await this.prisma.store.update({
-      where: { id: storeId },
-      // Pasó a pago: la prueba deja de existir.
-      data: { status: 'ACTIVE', trialEndsAt: null },
-    });
-
-    this.logger.log(`Plan ${plan.code} activado (pago simulado) para la tienda ${storeId}`);
-
-    return this.summary(storeId);
+    return store;
   }
 }
 
@@ -217,4 +315,14 @@ export function daysUntil(date: Date, now: Date = new Date()): number {
   const endOfDay = date.getTime() + DAY_MS;
 
   return Math.floor((endOfDay - now.getTime()) / DAY_MS);
+}
+
+/** De la referencia salen la tienda y el plan: el evento vuelve sin sesión. */
+function parseReference(reference: string): { storeId: string; planCode: string } | null {
+  const partes = reference.split('-');
+
+  // `sub-<uuid con 5 partes>-<plan>-<azar>`
+  if (partes.length !== 8 || partes[0] !== SUB_PREFIX) return null;
+
+  return { storeId: partes.slice(1, 6).join('-'), planCode: partes[6] ?? '' };
 }

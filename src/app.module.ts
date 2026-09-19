@@ -7,6 +7,7 @@ import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
 import { FrontSecretGuard } from '@shared/guards/front-secret.guard';
 import { AiModule } from '@shared/ai/ai.module';
 import { MailModule } from '@shared/mail/mail.module';
+import { PaymentsModule } from '@shared/payments/payments.module';
 import { StorageModule } from '@shared/storage/storage.module';
 import { AssistantModule } from '@modules/assistant/assistant.module';
 import { AuthModule } from '@modules/auth/auth.module';
@@ -44,6 +45,7 @@ import { PrismaModule } from '@db/prisma.module';
     StorageModule,
     MailModule,
     AiModule,
+    PaymentsModule,
     AuthModule,
     AssistantModule,
     CatalogModule,

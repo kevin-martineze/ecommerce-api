@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { PaymentEventsController } from './controllers/payment-events.controller';
 import { PlatformController } from './controllers/platform.controller';
 import { PublicPlansController } from './controllers/public-plans.controller';
 import { SubscriptionsController } from './controllers/subscriptions.controller';
@@ -16,7 +17,12 @@ import { SubscriptionsService } from './providers/subscriptions.service';
  * porque se aplican donde se crea lo que el plan acota.
  */
 @Module({
-  controllers: [PlatformController, PublicPlansController, SubscriptionsController],
+  controllers: [
+    PlatformController,
+    PublicPlansController,
+    SubscriptionsController,
+    PaymentEventsController,
+  ],
   providers: [PlatformService, PlatformDashboardService, SubscriptionsService],
 })
 export class PlatformModule {}
