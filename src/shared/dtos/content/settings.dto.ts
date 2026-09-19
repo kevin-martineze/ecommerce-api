@@ -44,6 +44,9 @@ export class StoreSettingsDto {
   @ApiProperty({ enum: STOREFRONT_TEMPLATES, description: 'Diseño de la vitrina.' })
   template!: string;
 
+  @ApiProperty({ description: 'Si la tienda tiene asistente: lo deciden su plan y la plataforma.' })
+  assistant!: boolean;
+
   @ApiProperty()
   updatedAt!: Date;
 }

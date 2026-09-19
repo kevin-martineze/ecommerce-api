@@ -1,15 +1,35 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { StoreSettings } from '@prisma/client';
+import { Assistant } from '@shared/ai/assistant';
 import { StoreSettingsDto, UpdateStoreSettingsDto } from '@shared/dtos/content/settings.dto';
 import { assertCollectionInStore } from '@shared/tenancy/store-references';
 import { blankToNull } from '@shared/utils/text';
-import { PrismaService } from '@db/prisma.service';
+import { PrismaService, TenantClient } from '@db/prisma.service';
 
 const MISSING = 'La tienda no tiene ajustes.';
 
 @Injectable()
 export class StoreSettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assistant: Assistant,
+  ) {}
+
+  /**
+   * Si esta tienda tiene asistente hoy: hace falta que la plataforma tenga un
+   * modelo encendido Y que el plan lo incluya. Se pregunta en cada lectura y
+   * no se guarda en los ajustes: cambiar de plan tiene que verse enseguida.
+   */
+  private async hasAssistant(tx: TenantClient, storeId: string): Promise<boolean> {
+    if (!this.assistant.available) return false;
+
+    const subscription = await tx.subscription.findUnique({
+      where: { storeId },
+      select: { plan: { select: { aiRepliesPerMonth: true } } },
+    });
+
+    return (subscription?.plan.aiRepliesPerMonth ?? 0) > 0;
+  }
 
   get(storeId: string): Promise<StoreSettingsDto> {
     return this.prisma.forStore(storeId, async (tx) => {
@@ -20,7 +40,7 @@ export class StoreSettingsService {
         throw new NotFoundException(MISSING);
       }
 
-      return toDto(store.name, settings);
+      return toDto(store.name, settings, await this.hasAssistant(tx, storeId));
     });
   }
 
@@ -61,12 +81,12 @@ export class StoreSettingsService {
         throw new NotFoundException(MISSING);
       }
 
-      return toDto(store.name, settings);
+      return toDto(store.name, settings, await this.hasAssistant(tx, storeId));
     });
   }
 }
 
-function toDto(storeName: string, settings: StoreSettings): StoreSettingsDto {
+function toDto(storeName: string, settings: StoreSettings, assistant: boolean): StoreSettingsDto {
   return {
     storeName,
     whatsappPhone: settings.whatsappPhone,
@@ -77,6 +97,7 @@ function toDto(storeName: string, settings: StoreSettings): StoreSettingsDto {
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,
     template: settings.template,
+    assistant,
     updatedAt: settings.updatedAt,
   };
 }
