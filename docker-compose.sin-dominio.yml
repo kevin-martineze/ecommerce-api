@@ -1,0 +1,11 @@
+# Sin dominio todavía: la API sale directo al puerto 80, sin HTTPS.
+#
+# Es para probar el despliegue antes de comprar el dominio. Lo que protege a la
+# API mientras tanto es `API_SHARED_SECRET` (y, en la nube, el grupo de
+# seguridad), pero el tráfico viaja en claro: los tokens de sesión van dentro.
+# No se atiende a nadie real así.
+
+services:
+  api:
+    ports:
+      - '80:3000'

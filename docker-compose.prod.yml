@@ -1,0 +1,44 @@
+# La API y su base en una sola instancia.
+#
+# Lo levanta `scripts/deploy-ec2.sh` en el servidor. Postgres NO publica su
+# puerto: solo lo alcanza la API por la red interna de compose. Para entrar a
+# la base desde afuera se hace un túnel SSH (ver docs/DEPLOY-AWS.md).
+#
+# La API tampoco se publica desde aquí. Quién la expone depende del overlay:
+#
+#   -f docker-compose.prod.yml -f docker-compose.caddy.yml       con dominio, HTTPS
+#   -f docker-compose.prod.yml -f docker-compose.sin-dominio.yml sin dominio, HTTP
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: globerce-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+      POSTGRES_DB: globerce
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Crea el rol restringido la primera vez. Si este archivo cambia, hay que
+      # correrlo a mano: solo se ejecuta al inicializar el volumen.
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d globerce']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    image: globerce-api:latest
+    container_name: globerce-api
+    env_file: .env.production
+    environment:
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
