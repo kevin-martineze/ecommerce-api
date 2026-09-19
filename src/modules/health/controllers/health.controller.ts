@@ -1,6 +1,7 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
+import { OpenRoute } from '@shared/decorators/open-route.decorator';
 import { PrismaService } from '@db/prisma.service';
 
 /**
@@ -21,6 +22,8 @@ import { PrismaService } from '@db/prisma.service';
 @ApiTags('health')
 @Controller('health')
 @SkipThrottle()
+// Las consulta el supervisor del contenedor, que no conoce el secreto del frontend.
+@OpenRoute()
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 

@@ -15,4 +15,8 @@ import { join } from 'node:path';
  */
 process.env.STORAGE_DRIVER = 'local';
 process.env.MAIL_DRIVER = 'log';
+
+// Con esto puesto, la API solo atiende a quien mande el secreto: el e2e que lo
+// prueba lo manda, y `test-app` lo agrega a las demás peticiones.
+process.env.API_SHARED_SECRET = 'secreto-de-pruebas-con-largo-suficiente';
 process.env.MEDIA_DIR = mkdtempSync(join(tmpdir(), 'tienda-media-'));

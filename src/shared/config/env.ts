@@ -102,6 +102,17 @@ const envSchema = z.object({
    * enlace de otra cuenta.
    */
   FRONTEND_URL: z.string().url().default('http://localhost:5173').transform(stripTrailingSlash),
+
+  /**
+   * Secreto que el frontend manda en `x-globerce-key`. Con él puesto, la API
+   * solo atiende a quien lo conozca (ver FrontSecretGuard). Vacío en
+   * desarrollo y en los tests; obligatorio en cuanto la API tenga IP pública.
+   */
+  API_SHARED_SECRET: z
+    .string()
+    .min(32, 'API_SHARED_SECRET necesita al menos 32 caracteres.')
+    .optional()
+    .transform((value) => value || undefined),
 });
 
 /**

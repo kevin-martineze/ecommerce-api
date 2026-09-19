@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from '@shared/config/env';
 import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
+import { FrontSecretGuard } from '@shared/guards/front-secret.guard';
 import { MailModule } from '@shared/mail/mail.module';
 import { StorageModule } from '@shared/storage/storage.module';
 import { AuthModule } from '@modules/auth/auth.module';
@@ -51,6 +52,9 @@ import { PrismaModule } from '@db/prisma.module';
     HealthModule,
   ],
   providers: [
+    // Primero la puerta de la infraestructura y después el límite de tráfico:
+    // a quien no debería estar llamando no se le gasta cuota de nadie.
+    { provide: APP_GUARD, useClass: FrontSecretGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],

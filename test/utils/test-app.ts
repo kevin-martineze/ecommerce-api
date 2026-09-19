@@ -8,6 +8,7 @@ import { Test } from '@nestjs/testing';
 import fastifyMultipart from '@fastify/multipart';
 import { Client } from 'pg';
 import { buildValidationPipe } from '@shared/config/validation-pipe';
+import { FRONT_SECRET_HEADER } from '@shared/guards/front-secret.guard';
 import { LogMailer } from '@shared/mail/log-mailer';
 import { Mailer } from '@shared/mail/mailer';
 import { MULTIPART_OPTIONS } from '@shared/media/upload';
@@ -59,6 +60,8 @@ export interface TestApp {
     payload?: object,
     headers?: Record<string, string>,
   ): Promise<TestResponse<T>>;
+  /** Una petición SIN el secreto del frontend, como la haría alguien de afuera. */
+  withoutSecret<T = unknown>(method: Method, url: string): Promise<TestResponse<T>>;
   /** Envía un archivo como multipart/form-data, con campos de texto opcionales. */
   upload<T = unknown>(
     method: Method,
@@ -116,7 +119,13 @@ export async function startTestApp(): Promise<TestApp> {
     const response = await app.inject({
       method,
       url: `/v1${url}`,
-      headers: session ? { ...headers, authorization: `Bearer ${session.token}` } : headers,
+      headers: {
+        // El frontend real lo manda en cada petición; acá se agrega salvo que
+        // la prueba traiga el suyo, que es como se comprueba la puerta.
+        [FRONT_SECRET_HEADER]: process.env.API_SHARED_SECRET ?? '',
+        ...headers,
+        ...(session ? { authorization: `Bearer ${session.token}` } : {}),
+      },
       payload,
     });
 
@@ -165,6 +174,7 @@ export async function startTestApp(): Promise<TestApp> {
       method,
       url: `/v1${url}`,
       headers: {
+        [FRONT_SECRET_HEADER]: process.env.API_SHARED_SECRET ?? '',
         authorization: `Bearer ${session.token}`,
         'content-type': `multipart/form-data; boundary=${boundary}`,
       },
@@ -176,10 +186,17 @@ export async function startTestApp(): Promise<TestApp> {
     return { status: response.statusCode, body };
   };
 
+  const withoutSecret = async <T>(method: Method, url: string): Promise<TestResponse<T>> => {
+    const response = await app.inject({ method, url: `/v1${url}` });
+
+    return { status: response.statusCode, body: JSON.parse(response.body || 'null') as T };
+  };
+
   const mailer = app.get(Mailer);
 
   return {
     call,
+    withoutSecret,
     upload,
     withOwner,
     mediaDir,
