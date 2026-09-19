@@ -202,6 +202,7 @@ export function toPlanDto(plan: Plan): PlanDto {
     maxOrdersPerMonth: plan.maxOrdersPerMonth,
     maxImagesPerProduct: plan.maxImagesPerProduct,
     customDomain: plan.customDomain,
+    aiRepliesPerMonth: plan.aiRepliesPerMonth,
     active: plan.active,
   };
 }

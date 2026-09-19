@@ -347,6 +347,12 @@ model Plan {
   /// Si el plan habilita dominio propio.
   customDomain Boolean @default(false) @map("custom_domain")
 
+  /// Respuestas del asistente que incluye el plan cada mes. 0 = sin asistente.
+  /// Es un número y no un booleano porque el costo lo pone el tráfico de la
+  /// tienda, no lo que paga la dueña: sin tope, una tienda que se vuelve viral
+  /// se come el margen de veinte.
+  aiRepliesPerMonth Int @default(0) @map("ai_replies_per_month")
+
   active Boolean @default(true)
 
   subscriptions Subscription[]

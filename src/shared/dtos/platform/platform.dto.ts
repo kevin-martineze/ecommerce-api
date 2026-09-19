@@ -41,6 +41,9 @@ export class PlanDto {
   @ApiProperty()
   customDomain!: boolean;
 
+  @ApiProperty({ description: 'Respuestas del asistente al mes. 0: el plan no lo incluye.' })
+  aiRepliesPerMonth!: number;
+
   @ApiProperty()
   active!: boolean;
 }

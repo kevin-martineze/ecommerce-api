@@ -96,14 +96,22 @@ describe('Plataforma (e2e)', () => {
     });
 
     it('cualquiera ve los planes que se ofrecen, sin sesión', async () => {
-      const { status, body } = await api.call<{ code: string; priceCop: number }[]>(
-        'GET',
-        '/plans',
-      );
+      const { status, body } = await api.call<
+        { code: string; priceCop: number; aiRepliesPerMonth: number }[]
+      >('GET', '/plans');
 
       expect(status).toBe(200);
-      expect(body.map((plan) => plan.code)).toEqual(expect.arrayContaining(['basico', 'pro']));
+      expect(body.map((plan) => plan.code)).toEqual(
+        expect.arrayContaining(['basico', 'impulso', 'pro']),
+      );
       expect(body.every((plan) => plan.priceCop > 0)).toBe(true);
+
+      // El asistente es lo que diferencia al plan de entrada de los de arriba.
+      const cuota = (code: string) => body.find((plan) => plan.code === code)?.aiRepliesPerMonth;
+
+      expect(cuota('basico')).toBe(0);
+      expect(cuota('impulso')).toBeGreaterThan(0);
+      expect(cuota('pro')).toBeGreaterThan(cuota('impulso') ?? 0);
     });
 
     it('un plan retirado no se anuncia, aunque las tiendas lo conserven', async () => {
