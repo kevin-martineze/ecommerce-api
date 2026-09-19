@@ -1,0 +1,71 @@
+# Los mismos gates que se corren en local, en cada push y en cada PR.
+#
+# Los e2e necesitan una base de verdad: RLS no se puede probar con dobles, y es
+# justamente lo que hay que probar. Por eso el servicio de Postgres y el rol
+# restringido, igual que en desarrollo.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: globerce
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # El dueño migra; la aplicación corre con el rol restringido, que es el
+      # que hace que RLS signifique algo.
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/globerce
+      DATABASE_URL: postgresql://tienda_app:tienda_app@localhost:5432/globerce
+      JWT_SECRET: secreto-de-integracion-con-largo-suficiente
+      COOKIE_SECRET: otro-secreto-de-integracion-con-largo
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # El repositorio no fija `packageManager`, así que la versión va aquí.
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Crear el rol de la aplicación
+        run: |
+          psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -c \
+            "create role tienda_app with login password 'tienda_app' nobypassrls nocreatedb nocreaterole nosuperuser"
+          psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -c \
+            "grant connect on database globerce to tienda_app"
+
+      - run: pnpm db:deploy
+
+      - run: pnpm typecheck
+      - run: pnpm lint:check
+      - run: pnpm format:check
+      - run: pnpm test
+      - run: pnpm test:e2e
+      - run: pnpm build

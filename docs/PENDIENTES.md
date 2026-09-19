@@ -42,9 +42,8 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
 
 ## 2. Backend
 
-- [ ] **Slugs reservados.** La API deja registrar `www`, `api` o `admin` como
-      tienda; el frontend nunca los resuelve como subdominio, así que esa
-      tienda nacería inalcanzable.
+- [x] **Slugs reservados.** (2026-09-19) La lista vive en los dos repos y cada
+      archivo nombra al otro.
 - [ ] **Dominios propios.** `stores.custom_domain` existe y el plan Pro lo
       promete, pero nada lo resuelve. Hace falta `GET /public/by-domain/:host`
       y un certificado por dominio.
@@ -57,16 +56,22 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
 
 ## 3. Frontend
 
-- [ ] **README obsoleto.** Explica cómo montar Supabase, que se abandonó hace
-      tiempo, y la carpeta `supabase/` sigue en el repo como peso muerto.
-- [ ] **Favicon e imagen social.** No hay ni carpeta `static/`: la pestaña sale
-      en blanco y un enlace compartido por WhatsApp no muestra nada.
-- [ ] **Páginas legales y contacto.** El sitio comercial es una sola página.
-      Términos y privacidad no son decoración si se van a cobrar
-      suscripciones.
-- [ ] **Tienda de demostración** a la que apuntar desde la página de precios.
-- [ ] **Cambiar de tienda.** El panel ya sabe si la cuenta tiene varias, pero
-      no hay selector: hoy se cambia navegando al otro subdominio.
+- [x] **README obsoleto.** (2026-09-19) Reescrito, y `supabase/` borrado: queda
+      en la historia de git, que es donde tiene que estar.
+- [x] **Favicon e imagen social.** (2026-09-19) La marca es un trazo, sin
+      depender de ninguna fuente, y la tarjeta social se dibuja con el mismo
+      texto del sitio.
+- [~] **Páginas legales y contacto.** (2026-09-19) Términos, privacidad y
+  contacto escritos y enlazados desde el pie. Los datos de la empresa
+  —razón social, NIT, correo— están en `$lib/config/empresa.ts` en `null`:
+  lo que falta no se pinta, porque un NIT inventado es peor que ninguno.
+  Falta llenarlos y que un abogado los lea.
+- [x] **Tienda de demostración.** (2026-09-19) El botón del hero apunta a
+      `PUBLIC_DEMO_STORE_SLUG`; sin esa variable no se ofrece, porque un enlace
+      a una demo que no existe es peor que no tener demo. Falta elegir cuál
+      cuando haya despliegue.
+- [x] **Cambiar de tienda.** (2026-09-19) Selector en la barra del panel, con
+      POST: cambiar de tienda cambia el estado de la sesión, no es navegar.
 - [ ] **Pruebas de navegador.** 73 unitarias y nada que recorra comprar →
       pedido → panel. Se ha verificado a mano en cada cambio, que no es lo
       mismo.
@@ -77,15 +82,18 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       La decisión pendiente está en `DEPLOY.md` § 2: Vercel pide manejar los
       nameservers para emitir el comodín, y eso choca con tener el dominio en
       Cloudflare para las fotos.
-- [ ] **Alcance de la cookie de sesión.** Hoy es host-only: una sesión abierta
-      en `globerce.store` no viaja a `boutique.globerce.store`, así que el
-      panel solo funciona en el host donde se entró. O el panel vive siempre
-      en el dominio raíz, o la cookie se emite para `.globerce.store`.
+- [x] **Alcance de la cookie de sesión.** (2026-09-19) Decidido: se emite para
+      todo el dominio raíz. Solo se comparte entre subdominios nuestros, que
+      sirven nuestro propio código, y sigue cifrada y `httpOnly`. En desarrollo
+      no cambia nada: `localhost:5173` no es un dominio válido para una
+      cookie.
 
 ## 5. Operación
 
-- [ ] **CI.** Ninguno de los dos repos tiene workflows: los gates se corren a
-      mano.
+- [x] **CI.** (2026-09-19) Workflows en los dos repos, con los mismos gates
+      que se corren en local. Los de la API levantan Postgres y el rol
+      restringido: RLS no se puede probar con dobles. Se activan en el próximo
+      push.
 - [ ] **Alertas.** Nadie avisa si la API se cae; el `/health` existe pero no lo
       mira nadie.
 
