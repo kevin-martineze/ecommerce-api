@@ -140,9 +140,19 @@ Copia el código, construye la imagen **en el servidor** (la instancia es ARM y
 migraciones las aplica la propia API al arrancar; si fallan, el contenedor no
 queda sirviendo contra un esquema viejo.
 
-Mientras no haya dominio, se usa `-f docker-compose.sin-dominio.yml`: la API
-sale por el puerto 80 sin certificado. Sirve para probar, no para atender a
-nadie: los tokens viajarían en claro.
+### HTTPS sin dominio propio
+
+Un certificado se emite para un NOMBRE, no para una IP, así que sin dominio
+no habría HTTPS. `sslip.io` resuelve cualquier nombre con forma de IP a esa
+IP: `18-227-142-167.sslip.io` apunta a la instancia sin registrar nada. Con
+eso, Let's Encrypt emite un certificado de verdad y Caddy lo renueva solo.
+
+Es el puente hasta comprar el dominio: cuando exista, se cambia `API_DOMAIN`
+a `api.<dominio>`, se apunta el DNS a la IP y Caddy pide el certificado
+nuevo. Nada más cambia.
+
+`-f docker-compose.sin-dominio.yml` queda para depurar sin certificado: la API
+sale por el puerto 80 en claro. No se atiende a nadie así.
 
 ### Primera vez
 
