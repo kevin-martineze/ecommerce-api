@@ -109,6 +109,11 @@ S3_SECRET_ACCESS_KEY=...
 S3_PUBLIC_URL=https://media.globerce.com
 S3_FORCE_PATH_STYLE=false
 
+# Cobro. `manual`: los pagos los registra la plataforma desde su consola.
+# `simulated` deja que cada tienda active su plan sola con un pago de mentira:
+# sirve para probar el flujo, nunca para cobrar de verdad.
+BILLING_DRIVER=manual
+
 # Correo
 MAIL_DRIVER=smtp
 SMTP_URL=smtp://usuario:clave@smtp.proveedor.com:587

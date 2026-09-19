@@ -275,14 +275,20 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
       con `sharp` (tres anchos WebP + LQIP) y la guarda en un almacenamiento
       intercambiable: disco local servido por la API, o cualquier bucket
       compatible con S3. Límite de fotos por prenda según el plan. Script
-      `db:import-supabase-media` copia las fotos de Supabase Storage. Ver § 11.
+      `db:import-supabase-media` copia las fotos de Supabase Storage. Ver § 12.
 - [x] **Fase 9 — Plataforma.** `/platform/*` para quien vende el software
       (tiendas, pagos manuales, plan, suspender), límites del plan aplicados
       al crear, y `GET /stores/:id/subscription` para el aviso del panel.
-      Ver § 12.
+      Ver § 13.
 - [x] **Fase 10 — Enganche del frontend.** El frontend lee y escribe todo
       por la API y reenvía las fotos tal cual llegan del formulario. Sin
       dependencias de Supabase (ver § 10).
+- [x] **Fase 11 — El plan, de punta a punta.** La tienda elige plan al
+      registrarse, el panel queda en solo lectura cuando vence y la dueña lo
+      reactiva pagando, con `BILLING_DRIVER=simulated` mientras no hay
+      pasarela. Ver § 13.
+- [x] **Fase 12 — Plantillas de la vitrina.** Dos diseños, elegidos en el
+      onboarding y cambiables desde Portada sin tocar el contenido. Ver § 11.
 
 ### Pendiente
 
@@ -467,7 +473,27 @@ el servidor», que parece un problema de credenciales y no lo es.
 
 ---
 
-## 11. Las fotos
+## 11. Las plantillas de la vitrina
+
+`store_settings.template` guarda con qué diseño se pinta la tienda. La API
+solo guarda y valida el código (`src/shared/content/templates.ts`); la
+plantilla misma —paleta, tipografía y cómo se arma la portada— vive en el
+frontend, que es quien la pinta. Esa frontera es la que hace que estrenar un
+diseño sea desplegar el frontend y no migrar la base.
+
+La columna es texto y no un enum de Postgres por lo mismo: agregar una
+plantilla no puede costar una migración de esquema. Tampoco lleva CHECK, y no
+por descuido: el frontend traduce un código que no conoce a la plantilla de
+por defecto, así que una tienda que quedó con una plantilla retirada sigue
+abriendo en vez de fallar. El que rechaza lo que no existe es el DTO, que es
+quien sabe qué se ofrece hoy.
+
+Una plantilla cambia el vestido, nunca el contenido: las mismas prendas, los
+mismos textos de portada y los mismos pedidos. Por eso cambiarla es un PATCH a
+los ajustes y no una migración de datos, y por eso se puede cambiar cuantas
+veces se quiera sin perder nada.
+
+## 12. Las fotos
 
 ### Por qué un almacenamiento intercambiable
 
@@ -513,7 +539,7 @@ notó en los tests, que usan `ts-jest`). Está activado en `tsconfig.json`.
 
 ---
 
-## 12. La plataforma
+## 13. La plataforma
 
 ### Quién entra
 
@@ -541,16 +567,36 @@ necesitará paginar; hoy tiene un techo de 200.
 | ------------------- | ------------------------ | -------------- | ------------ |
 | `TRIAL`             | el registro              | vende          | completo     |
 | `ACTIVE`            | un pago, o la plataforma | vende          | completo     |
-| `PAST_DUE`          | `reconcile`              | vende          | completo     |
+| `PAST_DUE`          | `reconcile`              | vende          | solo lectura |
 | `SUSPENDED`         | la plataforma, a mano    | 404            | solo lectura |
 
-`PAST_DUE` solo avisa: cortar la venta de una tienda es una decisión de una
-persona, no de un cron. Un pago devuelve a `ACTIVE` una tienda en prueba o
-vencida, pero no una suspendida: suspender fue una decisión y reactivar es
-otra.
+`PAST_DUE` no corta la venta: cortarle las ventas a una tienda por un pago
+atrasado castiga a sus clientas, y esa es una decisión de una persona, no de un
+cron. Lo que sí queda en pausa es el panel: `StoreRolesGuard` rechaza toda
+escritura con `error: subscription_required` (y con `store_suspended` si está
+suspendida), salvo las rutas marcadas con `@AllowedWithoutSubscription()`, que
+hoy son las de pagar: es justo lo que saca a la tienda de ahí.
+
+Un pago devuelve a `ACTIVE` una tienda en prueba o vencida, pero no una
+suspendida: suspender fue una decisión y reactivar es otra.
 
 Un pago es un asiento que no se edita. El período vigente se extiende hasta el
 fin del pago si ese fin es posterior; un pago atrasado no lo acorta.
+
+### Cobrarse sola
+
+`POST /stores/:storeId/subscription/activate` deja que la dueña active y pague
+su plan sin intermediarios. Mientras no hay pasarela el cobro es de mentira
+—registra un pago con `method: 'simulado'`—, así que la ruta solo responde con
+`BILLING_DRIVER=simulated`; en `manual` (el valor por defecto) devuelve 400 y el
+panel muestra el teléfono. El flag existe para que un endpoint que regala
+suscripciones no quede encendido por descuido en producción.
+
+Deja el mismo rastro que dejará el cobro de verdad: un pago registrado y el
+período extendido desde donde termina el vigente. Cuando llegue la pasarela
+cambia quién llama a este método —el webhook del cobro—, no lo que hace. Una
+tienda suspendida no puede pagar: cobrarle sería cobrarle por algo que el pago
+no le devuelve.
 
 ### El vencimiento
 
@@ -570,7 +616,7 @@ sobra se queda, y solo se bloquea crear más.
 
 ---
 
-## 13. Cuentas y equipo
+## 14. Cuentas y equipo
 
 ### Enlaces por correo
 

@@ -10,6 +10,7 @@ Piezas:
 | Base de datos  | Postgres gestionado     | `DATABASE_URL`, `DIRECT_URL`                |
 | Fotos          | Cloudflare R2           | `STORAGE_DRIVER=s3`, `S3_*`                 |
 | Correo         | cualquier SMTP          | `MAIL_DRIVER=smtp`, `SMTP_URL`, `MAIL_FROM` |
+| Cobro          | por ahora, a mano       | `BILLING_DRIVER=manual` (ver ARCHITECTURE)  |
 | API            | un servidor Node 22     | todo lo de `.env.example`                   |
 | Tienda y panel | Vercel (`shopping-sas`) | ver su `.env.example`                       |
 | Vencimientos   | cron del servidor       | `pnpm platform:reconcile` una vez al día    |
