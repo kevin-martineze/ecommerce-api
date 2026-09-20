@@ -139,6 +139,11 @@ apagado: `AI_DRIVER=none`.
       push.
 - [ ] **Alertas.** Nadie avisa si la API se cae; el `/health` existe pero no lo
       mira nadie.
+- [ ] **Acceso al servidor sin puerto 22.** Hoy el SSH está abierto solo para
+      una IP fija, y la de casa es dinámica: cada vez que el router se
+      reconecta hay que editar el Security Group a mano, y el síntoma es un
+      `ssh` que se cuelga sin error. Con SSM Session Manager se entra por la
+      API de AWS, sin puerto 22 abierto y sin depender de la IP. (2026-09-20)
 
 ---
 
@@ -146,8 +151,9 @@ apagado: `AI_DRIVER=none`.
 
 Estos no los puedo cerrar yo solo:
 
-- **Dominio:** comprarlo (o decidir dónde) para poder configurar DNS y
-  certificados.
+- **Dominio:** ~~comprarlo~~ hecho (`globerce.store` para las tiendas,
+  `globerce.cloud` para la API). Falta un registro en Hostinger: `CNAME *` →
+  `cname.vercel-dns.com`, sin el cual ninguna tienda resuelve en su subdominio.
 - **SMTP:** una cuenta de envío (Resend, SES, el que sea) y su clave.
 - **Pasarela:** la cuenta de comercio de Globerce en Wompi y sus cuatro llaves
   (`WOMPI_*`), más `PAYMENTS_SECRET` y `PUBLIC_API_URL` en el servidor. Cada
