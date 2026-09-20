@@ -47,6 +47,15 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
 
+  const config = app.get(ConfigService<Env, true>);
+
+  /**
+   * Fuera de producción la documentación se monta siempre. En producción
+   * solo si se pide: el Swagger enumera rutas, campos y validaciones, que es
+   * el mapa que busca quien quiera atacar la API.
+   */
+  const docsEnabled = !isProduction || config.get('DOCS_ENABLED', { infer: true });
+
   /**
    * Los plugins se registran sobre la app, no sobre el adapter.
    *
@@ -58,9 +67,10 @@ async function bootstrap(): Promise<void> {
    */
   await app.register(fastifyHelmet, {
     // Swagger UI carga scripts y estilos en línea que la CSP por defecto
-    // bloquea. La documentación solo se monta fuera de producción, así que la
-    // excepción vive y muere con ella.
-    contentSecurityPolicy: isProduction ? undefined : false,
+    // bloquea. La excepción sigue a la documentación, no al entorno: sin ella
+    // montada, la CSP queda puesta. El resto de la API responde JSON, sobre el
+    // que la CSP no decide nada.
+    contentSecurityPolicy: docsEnabled ? false : undefined,
   });
   await app.register(fastifyCompress);
   await app.register(fastifyCookie, {
@@ -72,8 +82,6 @@ async function bootstrap(): Promise<void> {
   // Las fotos entran como multipart, con su propio techo; el `bodyLimit` de
   // arriba sigue siendo para JSON.
   await app.register(fastifyMultipart, MULTIPART_OPTIONS);
-
-  const config = app.get(ConfigService<Env, true>);
 
   const apiPrefix = config.get('API_PREFIX', { infer: true });
   const port = config.get('PORT', { infer: true });
@@ -118,7 +126,7 @@ async function bootstrap(): Promise<void> {
   // Cierra conexiones de Postgres al recibir SIGTERM en vez de dejarlas colgando.
   app.enableShutdownHooks();
 
-  if (!isProduction) {
+  if (docsEnabled) {
     const document = SwaggerModule.createDocument(
       app,
       new DocumentBuilder()
@@ -145,7 +153,7 @@ async function bootstrap(): Promise<void> {
 
   logger.log(`API escuchando en http://localhost:${port}/${apiPrefix}`);
 
-  if (!isProduction) {
+  if (docsEnabled) {
     logger.log(`Documentación en http://localhost:${port}/${apiPrefix}/docs`);
   }
 }
