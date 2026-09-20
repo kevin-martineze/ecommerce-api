@@ -54,6 +54,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Prisma 7 ya no genera el cliente al instalar. Sin esto, `@prisma/client`
+      # es un paquete vacío: el typecheck cae con «has no exported member
+      # PrismaClient» y con un `any` implícito por cada modelo. En local no se
+      # nota porque el cliente quedó generado de una corrida anterior.
+      - run: pnpm db:generate
+
       - name: Crear el rol de la aplicación
         run: |
           psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -c \
