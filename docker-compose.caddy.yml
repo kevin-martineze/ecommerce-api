@@ -1,0 +1,28 @@
+# Con dominio: Caddy delante, con certificado automático de Let's Encrypt.
+#
+# Caddy es quien habla con internet; la API solo existe dentro de la red de
+# compose. Renueva el certificado solo, que es justamente lo que uno no quiere
+# recordar cada tres meses.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: globerce-caddy
+    depends_on:
+      - api
+    ports:
+      - '80:80'
+      - '443:443'
+    # `API_DOMAIN` sale de ahí: es el dominio del certificado.
+    env_file: .env.production
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # El certificado vive en este volumen: sin él, cada reinicio pediría uno
+      # nuevo y Let's Encrypt limita cuántos se emiten por semana.
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

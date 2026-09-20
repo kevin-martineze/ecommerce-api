@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { compare as bcryptCompare } from 'bcryptjs';
+
+/** `$2a$`, `$2b$` o `$2y$`: las variantes de bcrypt. Supabase Auth guarda `$2a$`. */
+const BCRYPT_PREFIX = /^\$2[aby]\$/;
 
 /**
  * Hash y verificación de contraseñas.
@@ -13,6 +17,13 @@ import * as argon2 from 'argon2';
  * memoria, dos pasadas, un hilo. Subirlos endurece el hash pero también
  * encarece cada login legítimo; estos valores tardan decenas de milisegundos en
  * hardware modesto, que es el punto de equilibrio razonable.
+ *
+ * **bcrypt se sigue LEYENDO, nunca escribiendo.** Las cuentas que vienen de la
+ * tienda con Supabase traen el hash de Supabase Auth, que es bcrypt. Obligarlas
+ * a crear contraseña nueva exigiría un flujo de recuperación que todavía no
+ * existe. En cambio se verifican con bcrypt una vez y, en ese mismo login —el
+ * único momento en que se tiene la contraseña en claro—, se reemplazan por
+ * argon2id. Ver `needsRehash` y `AuthService.login`.
  */
 @Injectable()
 export class PasswordService {
@@ -37,9 +48,30 @@ export class PasswordService {
    */
   async verify(hash: string, plain: string): Promise<boolean> {
     try {
+      if (BCRYPT_PREFIX.test(hash)) {
+        return await bcryptCompare(plain, hash);
+      }
+
       return await argon2.verify(hash, plain);
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * true si el hash no es argon2id con los parámetros actuales y conviene
+   * rehacerlo en el próximo login correcto: un bcrypt migrado, o un argon2 de
+   * cuando los parámetros eran otros.
+   */
+  needsRehash(hash: string): boolean {
+    if (BCRYPT_PREFIX.test(hash)) {
+      return true;
+    }
+
+    try {
+      return argon2.needsRehash(hash, this.options);
+    } catch {
+      return true;
     }
   }
 

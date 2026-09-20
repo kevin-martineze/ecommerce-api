@@ -4,8 +4,22 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from '@shared/config/env';
 import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
+import { FrontSecretGuard } from '@shared/guards/front-secret.guard';
+import { AiModule } from '@shared/ai/ai.module';
+import { MailModule } from '@shared/mail/mail.module';
+import { PaymentsModule } from '@shared/payments/payments.module';
+import { StorageModule } from '@shared/storage/storage.module';
+import { AssistantModule } from '@modules/assistant/assistant.module';
 import { AuthModule } from '@modules/auth/auth.module';
+import { CatalogModule } from '@modules/catalog/catalog.module';
+import { CommerceModule } from '@modules/commerce/commerce.module';
+import { ContentModule } from '@modules/content/content.module';
 import { HealthModule } from '@modules/health/health.module';
+import { OrdersModule } from '@modules/orders/orders.module';
+import { StorePaymentsModule } from '@modules/payments/payments.module';
+import { PlatformModule } from '@modules/platform/platform.module';
+import { StorefrontModule } from '@modules/storefront/storefront.module';
+import { TeamModule } from '@modules/team/team.module';
 import { PrismaModule } from '@db/prisma.module';
 
 @Module({
@@ -29,10 +43,26 @@ import { PrismaModule } from '@db/prisma.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
 
     PrismaModule,
+    StorageModule,
+    MailModule,
+    AiModule,
+    PaymentsModule,
     AuthModule,
+    AssistantModule,
+    CatalogModule,
+    ContentModule,
+    CommerceModule,
+    StorefrontModule,
+    OrdersModule,
+    PlatformModule,
+    StorePaymentsModule,
+    TeamModule,
     HealthModule,
   ],
   providers: [
+    // Primero la puerta de la infraestructura y después el límite de tráfico:
+    // a quien no debería estar llamando no se le gasta cuota de nadie.
+    { provide: APP_GUARD, useClass: FrontSecretGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],

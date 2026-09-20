@@ -59,3 +59,14 @@ export class SessionResponseDto {
   })
   activeStoreId!: string | null;
 }
+
+export class MeResponseDto {
+  @ApiProperty({ type: SessionUserDto })
+  user!: SessionUserDto;
+
+  @ApiProperty({ type: [SessionStoreDto] })
+  stores!: SessionStoreDto[];
+
+  @ApiProperty({ description: 'Si la cuenta puede entrar a /platform.' })
+  isPlatformAdmin!: boolean;
+}

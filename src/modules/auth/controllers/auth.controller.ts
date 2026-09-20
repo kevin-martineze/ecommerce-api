@@ -1,20 +1,41 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FastifyRequest } from 'fastify';
 import { AuthenticatedUser, CurrentUser } from '@shared/decorators/current-user.decorator';
+import {
+  AcceptInvitationDto,
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  InvitationPreviewDto,
+  ResetPasswordDto,
+} from '@shared/dtos/auth/account.dto';
 import { LoginDto } from '@shared/dtos/auth/login.dto';
 import { RefreshDto, SwitchStoreDto } from '@shared/dtos/auth/refresh.dto';
-import { RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
-import { SessionResponseDto } from '@shared/dtos/auth/session-response.dto';
+import { CreateStoreDto, RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
+import { MeResponseDto, SessionResponseDto } from '@shared/dtos/auth/session-response.dto';
 import { JwtAuthGuard } from '@shared/guards/jwt-auth.guard';
 
+import { AccountService } from '../providers/account.service';
 import { AuthService } from '../providers/auth.service';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly account: AccountService,
+  ) {}
 
   /**
    * Límite propio y agresivo.
@@ -29,6 +50,20 @@ export class AuthController {
   @ApiOperation({ summary: 'Crea una tienda y la cuenta de su dueña. Devuelve sesión iniciada.' })
   register(@Body() dto: RegisterStoreDto, @Req() req: FastifyRequest): Promise<SessionResponseDto> {
     return this.auth.registerStore(dto, contextOf(req));
+  }
+
+  @Post('stores')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Crea otra tienda para esta cuenta. Devuelve una sesión ya atada a ella.',
+  })
+  createStore(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateStoreDto,
+    @Req() req: FastifyRequest,
+  ): Promise<SessionResponseDto> {
+    return this.auth.createStore(user.id, dto, contextOf(req));
   }
 
   @Post('login')
@@ -66,7 +101,7 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Datos de la cuenta y tiendas donde es miembro.' })
-  me(@CurrentUser() user: AuthenticatedUser) {
+  me(@CurrentUser() user: AuthenticatedUser): Promise<MeResponseDto> {
     return this.auth.me(user.id);
   }
 
@@ -75,6 +110,56 @@ export class AuthController {
   @ApiOperation({ summary: 'Cierra esta sesión. Las otras sesiones de la cuenta siguen vivas.' })
   async logout(@Body() dto: RefreshDto): Promise<void> {
     await this.auth.logout(dto.refreshToken);
+  }
+
+  @Post('password/forgot')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Manda el enlace para elegir contraseña. Responde igual exista o no la cuenta.',
+  })
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: FastifyRequest): Promise<void> {
+    await this.account.forgotPassword(dto.email, contextOf(req));
+  }
+
+  @Post('password/reset')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Fija la contraseña con el enlace del correo y cierra todas las sesiones.',
+  })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.account.resetPassword(dto);
+  }
+
+  @Post('password/change')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Cambia la contraseña. Esta sesión sigue; las demás se cierran.' })
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    await this.account.changePassword(user.id, dto);
+  }
+
+  @Get('invitations/:token')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Qué tienda invita, a qué correo y con qué rol.' })
+  previewInvitation(@Param('token') token: string): Promise<InvitationPreviewDto> {
+    return this.account.previewInvitation(token);
+  }
+
+  @Post('invitations/accept')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Acepta la invitación. Devuelve sesión iniciada en esa tienda.' })
+  acceptInvitation(
+    @Body() dto: AcceptInvitationDto,
+    @Req() req: FastifyRequest,
+  ): Promise<SessionResponseDto> {
+    return this.account.acceptInvitation(dto, contextOf(req));
   }
 }
 

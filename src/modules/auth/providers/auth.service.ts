@@ -6,9 +6,13 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { LoginDto } from '@shared/dtos/auth/login.dto';
-import { RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
-import { SessionResponseDto, SessionStoreDto } from '@shared/dtos/auth/session-response.dto';
-import { PrismaService } from '@db/prisma.service';
+import { CreateStoreDto, RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
+import {
+  MeResponseDto,
+  SessionResponseDto,
+  SessionStoreDto,
+} from '@shared/dtos/auth/session-response.dto';
+import { PrismaService, TenantClient } from '@db/prisma.service';
 
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
@@ -36,7 +40,10 @@ const BASE_COLORS = [
 /** Días de prueba antes del primer cobro. */
 const TRIAL_DAYS = 14;
 
-interface RequestContext {
+/** Con qué plan arranca quien no eligió ninguno. */
+const DEFAULT_PLAN = 'basico';
+
+export interface RequestContext {
   userAgent?: string | null;
   ip?: string | null;
 }
@@ -51,15 +58,7 @@ export class AuthService {
     private readonly tokens: TokenService,
   ) {}
 
-  /**
-   * Da de alta una tienda y la cuenta de su dueña, en una sola transacción.
-   *
-   * El orden importa y no es arbitrario: `users`, `stores` y `store_members` no
-   * están bajo RLS —hay que poder resolverlos antes de saber de qué tienda
-   * hablamos— pero todo lo que cuelga de la tienda sí lo está. Por eso se fija
-   * el contexto en medio de la transacción, justo después de crear la tienda y
-   * justo antes de lo primero que RLS protege.
-   */
+  /** Da de alta una tienda y la cuenta de su dueña, en una sola transacción. */
   async registerStore(
     dto: RegisterStoreDto,
     context: RequestContext = {},
@@ -76,54 +75,7 @@ export class AuthService {
         data: { email, fullName: dto.fullName.trim(), passwordHash },
       });
 
-      const createdStore = await tx.store.create({
-        data: {
-          name: dto.storeName.trim(),
-          slug: dto.storeSlug,
-          status: 'TRIAL',
-          trialEndsAt: daysFromNow(TRIAL_DAYS),
-        },
-      });
-
-      await tx.storeMember.create({
-        data: { storeId: createdStore.id, userId: createdUser.id, role: 'OWNER' },
-      });
-
-      // A partir de acá todo está bajo RLS: sin esta línea, cada insert de abajo
-      // fallaría contra su propia política.
-      await this.prisma.setStoreContext(tx, createdStore.id);
-
-      await tx.storeSettings.create({
-        data: { storeId: createdStore.id, whatsappPhone: dto.whatsappPhone },
-      });
-
-      await tx.subscription.create({
-        data: {
-          storeId: createdStore.id,
-          planCode: 'basico',
-          status: 'TRIALING',
-          currentPeriodEnd: daysFromNow(TRIAL_DAYS),
-        },
-      });
-
-      // Una tienda sin tallas ni colores no puede crear ni un producto. Se
-      // siembra lo mínimo para que el panel sea usable desde el primer minuto;
-      // todo es editable después.
-      await tx.size.createMany({
-        data: BASE_SIZES.map((label, index) => ({
-          storeId: createdStore.id,
-          label,
-          sortOrder: index,
-        })),
-      });
-
-      await tx.color.createMany({
-        data: BASE_COLORS.map((color, index) => ({
-          storeId: createdStore.id,
-          ...color,
-          sortOrder: index,
-        })),
-      });
+      const createdStore = await this.provisionStore(tx, createdUser.id, dto);
 
       return { user: createdUser, store: createdStore };
     });
@@ -140,12 +92,38 @@ export class AuthService {
     };
   }
 
+  /**
+   * Una tienda más para una cuenta que ya existe. La sesión presentada rota a
+   * una nueva atada a la tienda recién creada, igual que al cambiar de tienda.
+   */
+  async createStore(
+    userId: string,
+    dto: CreateStoreDto,
+    context: RequestContext = {},
+  ): Promise<SessionResponseDto> {
+    await this.assertSlugAvailable(dto.storeSlug);
+
+    const store = await this.prisma.withTransaction((tx) => this.provisionStore(tx, userId, dto));
+
+    this.logger.log(`Tienda registrada: ${store.slug}`);
+
+    const issued = await this.tokens.rotate(dto.refreshToken, store.id, context, userId);
+    const user = await this.requireUserWithStores(userId);
+
+    return {
+      ...issued,
+      user: { id: user.id, email: user.email, fullName: user.fullName },
+      stores: toSessionStores(user.memberships),
+      activeStoreId: store.id,
+    };
+  }
+
   async login(dto: LoginDto, context: RequestContext = {}): Promise<SessionResponseDto> {
     const email = dto.email.trim().toLowerCase();
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { memberships: { include: { store: true } } },
+      include: { memberships: { include: { store: true }, orderBy: { createdAt: 'asc' } } },
     });
 
     if (!user || !user.passwordHash) {
@@ -175,6 +153,16 @@ export class AuthService {
       await this.prisma.user.update({
         where: { id: user.id },
         data: { failedLoginAttempts: 0, lockedUntil: null },
+      });
+    }
+
+    // Las cuentas migradas desde Supabase llegan con bcrypt. Este es el único
+    // momento en que se tiene la contraseña en claro, así que se aprovecha para
+    // dejarla en argon2id. Ver PasswordService.
+    if (this.passwords.needsRehash(user.passwordHash)) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await this.passwords.hash(dto.password) },
       });
     }
 
@@ -212,7 +200,7 @@ export class AuthService {
       throw new ForbiddenException('No tienes acceso a esa tienda.');
     }
 
-    const issued = await this.tokens.rotate(presentedRefreshToken, storeId, context);
+    const issued = await this.tokens.rotate(presentedRefreshToken, storeId, context, userId);
     const user = await this.requireUserWithStores(userId);
 
     return {
@@ -238,16 +226,33 @@ export class AuthService {
     };
   }
 
-  async me(
-    userId: string,
-  ): Promise<
-    Omit<SessionResponseDto, 'accessToken' | 'refreshToken' | 'expiresIn' | 'activeStoreId'>
-  > {
+  async me(userId: string): Promise<MeResponseDto> {
     const user = await this.requireUserWithStores(userId);
 
     return {
       user: { id: user.id, email: user.email, fullName: user.fullName },
       stores: toSessionStores(user.memberships),
+      isPlatformAdmin: user.platformAdmin !== null,
+    };
+  }
+
+  /**
+   * Emite una sesión para una cuenta ya verificada por otro camino (aceptar
+   * una invitación). Nunca debe llamarse sin haber probado antes la identidad.
+   */
+  async sessionFor(
+    userId: string,
+    storeId: string | null,
+    context: RequestContext = {},
+  ): Promise<SessionResponseDto> {
+    const user = await this.requireUserWithStores(userId);
+    const issued = await this.tokens.issue(user.id, user.email, storeId, context);
+
+    return {
+      ...issued,
+      user: { id: user.id, email: user.email, fullName: user.fullName },
+      stores: toSessionStores(user.memberships),
+      activeStoreId: storeId,
     };
   }
 
@@ -255,10 +260,83 @@ export class AuthService {
     await this.tokens.revoke(refreshToken);
   }
 
+  /**
+   * Crea la tienda con su dueña y lo mínimo para operar, dentro de la
+   * transacción que recibe.
+   *
+   * El orden importa y no es arbitrario: `stores` y `store_members` no están
+   * bajo RLS —hay que poder resolverlos antes de saber de qué tienda hablamos—
+   * pero todo lo que cuelga de la tienda sí lo está. Por eso se fija el
+   * contexto justo después de crear la tienda y justo antes de lo primero que
+   * RLS protege.
+   */
+  private async provisionStore(
+    tx: TenantClient,
+    userId: string,
+    dto: Pick<RegisterStoreDto, 'storeName' | 'storeSlug' | 'whatsappPhone' | 'planCode'>,
+  ) {
+    // El plan que eligió en la web. Uno retirado o inventado cae en el básico:
+    // no es motivo para que el registro falle después de crear la cuenta.
+    const chosen = dto.planCode
+      ? await tx.plan.findFirst({
+          where: { code: dto.planCode, active: true },
+          select: { code: true },
+        })
+      : null;
+
+    const store = await tx.store.create({
+      data: {
+        name: dto.storeName.trim(),
+        slug: dto.storeSlug,
+        status: 'TRIAL',
+        trialEndsAt: daysFromNow(TRIAL_DAYS),
+      },
+    });
+
+    await tx.storeMember.create({ data: { storeId: store.id, userId, role: 'OWNER' } });
+
+    // A partir de acá todo está bajo RLS: sin esta línea, cada insert de abajo
+    // fallaría contra su propia política.
+    await this.prisma.setStoreContext(tx, store.id);
+
+    await tx.storeSettings.create({
+      data: { storeId: store.id, whatsappPhone: dto.whatsappPhone },
+    });
+
+    await tx.subscription.create({
+      data: {
+        storeId: store.id,
+        planCode: chosen?.code ?? DEFAULT_PLAN,
+        status: 'TRIALING',
+        currentPeriodEnd: daysFromNow(TRIAL_DAYS),
+      },
+    });
+
+    // Una tienda sin tallas ni colores no puede crear ni un producto. Se
+    // siembra lo mínimo para que el panel sea usable desde el primer minuto;
+    // todo es editable después.
+    await tx.size.createMany({
+      data: BASE_SIZES.map((label, index) => ({ storeId: store.id, label, sortOrder: index })),
+    });
+
+    await tx.color.createMany({
+      data: BASE_COLORS.map((color, index) => ({
+        storeId: store.id,
+        ...color,
+        sortOrder: index,
+      })),
+    });
+
+    return store;
+  }
+
   private async requireUserWithStores(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { memberships: { include: { store: true } } },
+      include: {
+        memberships: { include: { store: true }, orderBy: { createdAt: 'asc' } },
+        platformAdmin: { select: { userId: true } },
+      },
     });
 
     if (!user) {
@@ -285,7 +363,12 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
 
     if (existing) {
-      throw new ConflictException('Ya existe una cuenta con ese correo.');
+      // El código le dice al frontend bajo qué campo poner el mensaje; sin él
+      // tendría que adivinarlo leyendo el texto en español.
+      throw new ConflictException({
+        message: 'Ya existe una cuenta con ese correo.',
+        error: 'email_taken',
+      });
     }
   }
 
@@ -293,7 +376,10 @@ export class AuthService {
     const existing = await this.prisma.store.findUnique({ where: { slug }, select: { id: true } });
 
     if (existing) {
-      throw new ConflictException('Ese identificador de tienda ya está tomado.');
+      throw new ConflictException({
+        message: 'Esa dirección ya está tomada. Prueba con otra.',
+        error: 'slug_taken',
+      });
     }
   }
 }

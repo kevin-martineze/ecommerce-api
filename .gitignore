@@ -6,3 +6,14 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+
+# Fotos con el driver local (ver src/shared/config/env.ts)
+/media/
+
+# Configuración del despliegue (scripts/deploy-ec2.sh)
+.deploy.env
+# Variables del servidor: viven en la instancia, nunca acá
+.env.production
+
+# Copias de la base en el servidor (ver scripts/backup-db.sh).
+/backups

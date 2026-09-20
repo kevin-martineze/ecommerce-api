@@ -6,6 +6,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: tienda
+      # La clave del rol restringido que usa la API. En producción sale del
+      # entorno; acá una de ejemplo, igual que antes.
+      APP_DB_PASSWORD: tienda_app
     ports:
       - '${POSTGRES_PORT:-5432}:5432'
     volumes:

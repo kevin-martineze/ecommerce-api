@@ -7,6 +7,7 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
@@ -29,6 +30,6 @@
     "noUncheckedIndexedAccess": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*", "prisma.config.ts"],
+  "include": ["src/**/*", "test/**/*", "scripts/**/*", "prisma.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

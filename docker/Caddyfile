@@ -1,0 +1,15 @@
+# Caddy pide y renueva el certificado del dominio de la API, y pasa todo a la
+# API por la red interna de compose.
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# `X-Forwarded-For` lo pone Caddy con la IP real de quien llamó, que es el
+	# servidor del frontend. La IP de la visitante llega dentro, la manda el
+	# frontend y la API se la cree porque antes pasó el secreto compartido.
+	reverse_proxy api:3000
+
+	log {
+		output stdout
+		format console
+	}
+}

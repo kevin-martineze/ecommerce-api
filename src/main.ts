@@ -1,4 +1,6 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { resolve } from 'node:path';
+
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -6,7 +8,12 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCompress from '@fastify/compress';
 import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyMultipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import { FastifyInstance } from 'fastify';
 import { Env } from '@shared/config/env';
+import { buildValidationPipe } from '@shared/config/validation-pipe';
+import { MULTIPART_OPTIONS } from '@shared/media/upload';
 
 import { AppModule } from './app.module';
 
@@ -62,25 +69,46 @@ async function bootstrap(): Promise<void> {
     secret: process.env.COOKIE_SECRET,
   });
 
+  // Las fotos entran como multipart, con su propio techo; el `bodyLimit` de
+  // arriba sigue siendo para JSON.
+  await app.register(fastifyMultipart, MULTIPART_OPTIONS);
+
   const config = app.get(ConfigService<Env, true>);
 
   const apiPrefix = config.get('API_PREFIX', { infer: true });
   const port = config.get('PORT', { infer: true });
   const corsOrigins = config.get('CORS_ORIGINS', { infer: true });
 
+  // Con el driver local la propia API sirve las fotos. Con S3 las sirve el
+  // bucket (o un CDN) y esta ruta no existe.
+  if (config.get('STORAGE_DRIVER', { infer: true }) === 'local') {
+    const mediaRoot = resolve(config.get('MEDIA_DIR', { infer: true }));
+
+    await app.register(async (media: FastifyInstance) => {
+      // Helmet pone `Cross-Origin-Resource-Policy: same-origin` en todo, y con
+      // eso el navegador se niega a pintar una foto de la API dentro de la
+      // tienda, que vive en otro origen. Solo las fotos se abren: el hook vive
+      // en este contexto y no toca al resto de la API.
+      media.addHook('onSend', async (_request, reply, payload) => {
+        reply.header('cross-origin-resource-policy', 'cross-origin');
+
+        return payload;
+      });
+
+      await media.register(fastifyStatic, {
+        root: mediaRoot,
+        prefix: '/media/',
+        // Las claves llevan marca de tiempo y nunca se reutilizan.
+        maxAge: '365d',
+        immutable: true,
+        decorateReply: false,
+      });
+    });
+  }
+
   app.setGlobalPrefix(apiPrefix);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      // `whitelist` descarta lo que no está en el DTO; `forbidNonWhitelisted`
-      // además lo rechaza con 400. Es la diferencia entre ignorar en silencio
-      // un campo que el cliente creía estar mandando y decírselo.
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: false },
-    }),
-  );
+  app.useGlobalPipes(buildValidationPipe());
 
   // `credentials` porque el refresh token viaja en cookie. La lista de orígenes
   // se valida en el entorno; vacía significa que nadie cruza, y eso está bien:
@@ -94,7 +122,7 @@ async function bootstrap(): Promise<void> {
     const document = SwaggerModule.createDocument(
       app,
       new DocumentBuilder()
-        .setTitle('Tienda — API')
+        .setTitle('Globerce — API')
         .setDescription(
           'API multi-inquilino. Tres superficies:\n\n' +
             '- `/public/:storeSlug/*` — catálogo y pedidos del visitante. Sin autenticación.\n' +

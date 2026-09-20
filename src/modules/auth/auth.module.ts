@@ -6,6 +6,7 @@ import { Env } from '@shared/config/env';
 import { StoreRolesGuard } from '@shared/guards/store-roles.guard';
 
 import { AuthController } from './controllers/auth.controller';
+import { AccountService } from './providers/account.service';
 import { AuthService } from './providers/auth.service';
 import { PasswordService } from './providers/password.service';
 import { TokenService } from './providers/token.service';
@@ -23,7 +24,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordService, TokenService, JwtStrategy, StoreRolesGuard],
+  providers: [
+    AuthService,
+    AccountService,
+    PasswordService,
+    TokenService,
+    JwtStrategy,
+    StoreRolesGuard,
+  ],
   // Los guards se exportan para que cualquier módulo de dominio pueda proteger
   // sus rutas sin volver a declararlos.
   exports: [StoreRolesGuard, TokenService],

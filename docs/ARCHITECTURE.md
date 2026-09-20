@@ -58,6 +58,21 @@ visitante sin darse cuenta.
 La superficie pública usa el **slug** y no el UUID, porque forma parte de una
 URL que se comparte por WhatsApp y porque así el CDN puede cachear por URL.
 
+### El límite por IP, detrás del frontend
+
+El frontend llama a esta API desde su servidor, así que sin ayuda todas las
+visitantes llegan con la IP del servidor de la tienda. Un límite por IP sobre
+las lecturas públicas terminaría frenando a la tienda entera, por eso esas
+rutas llevan `@SkipThrottle`. Las escrituras públicas (aviso de reposición,
+pedidos) y el login sí conservan su límite, y para que cuente la IP de la
+visitante el frontend la reenvía en `X-Forwarded-For` (el adaptador arranca con
+`trustProxy`).
+
+Ese header lo puede falsificar cualquiera que llegue a la API directo. La
+defensa real es que la API no sea alcanzable desde internet más que por el
+frontend: red privada o un secreto compartido entre los dos. Queda pendiente
+para el despliegue.
+
 ---
 
 ## 4. Aislamiento entre inquilinos: cuatro capas
@@ -137,7 +152,26 @@ Tres detalles sostienen la garantía, y los tres están comentados en
 RLS es la red, no la regla. El filtro explícito por `storeId` sigue siendo
 obligatorio en cada consulta, y un test recorre los servicios y falla el build
 si alguno consulta un modelo con `storeId` sin incluirlo. Sigue el patrón
-`.arch-spec.ts` que ya se usa en `micro-ehr`.
+`.arch-spec.ts` que ya se usa en `micro-ehr` y vive en
+`src/prisma/tenant-scope.arch-spec.ts`.
+
+El test lee los modelos de tienda del schema, no de una lista propia, así que
+un modelo nuevo queda cubierto solo. Es textual: el filtro tiene que estar
+escrito en la llamada misma (`findMany({ where: { storeId, … } })`), no armado
+en una variable aparte.
+
+### Lo que RLS no cubre: las claves foráneas
+
+Postgres verifica las claves foráneas **por fuera** de RLS, para que la
+integridad no dependa de quién mira. Consecuencia: la base acepta un producto
+de la tienda A cuya `category_id` apunte a una categoría de la tienda B. Leído
+después con el contexto de A, ese padre "no existe", y si la relación es
+obligatoria —el color de una variante— la consulta entera se rompe.
+
+Por eso todo id de otra tabla que entra por un DTO se verifica contra la tienda
+antes de escribirse (`shared/tenancy/store-references.ts`). Una
+clave foránea compuesta `(store_id, id)` lo cerraría en la base; queda como
+mejora.
 
 ---
 
@@ -218,14 +252,59 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
 - [x] **Fase 3 — Auth.** Registro de tienda, login, refresh con rotación y
       detección de reuso, `switch-store`, `JwtAuthGuard` y `StoreRolesGuard`.
       Integrada con el panel de SvelteKit: ver § 10.
-- [ ] **Fase 4 — Catálogo del panel.**
-- [ ] **Fase 5 — Catálogo público.**
-- [ ] **Fase 6 — Pedidos.**
-- [ ] **Fase 7 — Cupones, envíos y ajustes.**
-- [ ] **Fase 8 — Medios.** `sharp` a WebP, subida a S3/R2.
-- [ ] **Fase 9 — Plataforma.** Tiendas, pagos manuales, límites de plan.
-- [ ] **Fase 10 — Enganche del frontend.** Cliente tipado en SvelteKit; se
-      retiran `supabase-js` y `@supabase/ssr`.
+- [x] **Fase 4 — Catálogo del panel.** Colores, tallas, categorías, prendas,
+      matriz de variantes e inventario bajo `/stores/:storeId/*`. Lo que está
+      en uso se oculta o archiva en vez de borrarse. Test de arquitectura del
+      filtro por `storeId` y e2e con dos tiendas. Las fotos quedan para la
+      fase 8.
+- [x] **Fase 5 — Catálogo público.** `/public/:storeSlug/*`: layout, portada,
+      listado con filtros, facetas, ficha, relacionadas, favoritos, colecciones,
+      sitemap y aviso de reposición. Replica las políticas de lectura de
+      Supabase (solo lo publicado y activo). Probado contra la tienda importada.
+- [x] **Fase 6 — Pedidos.** Cotización del carrito, creación con bloqueo
+      ordenado de variantes, revalidación de stock bajo lock, número por
+      tienda, cupón bajo lock e `Idempotency-Key`. Vista pública con token,
+      WhatsApp abierto, panel con filtros y cancelación que devuelve el stock
+      una sola vez. Un pedido cancelado no se reabre. Reglas de precio en
+      `shared/commerce/pricing.ts`, compartidas por cotización y pedido.
+- [x] **Fase 7 — Cupones, envíos, ajustes y contenido.** Cupones, zonas,
+      avisos de reposición, resumen del panel, ajustes, bloques de portada y
+      colecciones. Las fotos se registran por un endpoint puente mientras la
+      subida siga en el frontend.
+- [x] **Fase 8 — Medios.** La API recibe la foto por multipart, la convierte
+      con `sharp` (tres anchos WebP + LQIP) y la guarda en un almacenamiento
+      intercambiable: disco local servido por la API, o cualquier bucket
+      compatible con S3. Límite de fotos por prenda según el plan. Script
+      `db:import-supabase-media` copia las fotos de Supabase Storage. Ver § 12.
+- [x] **Fase 9 — Plataforma.** `/platform/*` para quien vende el software
+      (tiendas, pagos manuales, plan, suspender), límites del plan aplicados
+      al crear, y `GET /stores/:id/subscription` para el aviso del panel.
+      Ver § 13.
+- [x] **Fase 10 — Enganche del frontend.** El frontend lee y escribe todo
+      por la API y reenvía las fotos tal cual llegan del formulario. Sin
+      dependencias de Supabase (ver § 10).
+- [x] **Fase 11 — El plan, de punta a punta.** La tienda elige plan al
+      registrarse, el panel queda en solo lectura cuando vence y la dueña lo
+      reactiva pagando, con `BILLING_DRIVER=simulated` mientras no hay
+      pasarela. Ver § 13.
+- [x] **Fase 12 — Plantillas de la vitrina.** Dos diseños, elegidos en el
+      onboarding y cambiables desde Portada sin tocar el contenido. Ver § 11.
+
+### Pendiente
+
+- **Dominios propios.** `stores.custom_domain` existe y el plan Pro lo
+  incluye, pero ni la API resuelve una tienda por dominio ni el frontend lo
+  pide. Hace falta un `GET /public/by-domain/:host` y, en el despliegue, el
+  certificado de cada dominio.
+- **El access token sobrevive a su sesión.** Restablecer o cambiar la
+  contraseña cierra los refresh tokens, pero un access token ya emitido
+  sigue valiendo hasta su vencimiento (15 minutos). Cerrarlo antes exige
+  que el guard compare el `iat` con una marca por cuenta
+  (`sessions_valid_after`), una consulta más por petición.
+- **Cobro automático.** Los pagos se registran a mano desde la consola.
+- **API no expuesta.** El límite por IP confía en `X-Forwarded-For` del
+  frontend (§ 3): en producción la API tiene que quedar detrás de una red
+  privada o de un secreto compartido.
 
 ---
 
@@ -259,15 +338,15 @@ sin filtrar justamente lo que se quiere ocultar— pero significa que el código
 de aplicación **no puede** interpretar "0 filas afectadas" como "ya estaba
 así". Tiene que tratarlo como "no existe o no es mío", y responder 404.
 
-Esta comprobación se hizo a mano una vez. Convertirla en `test/rls.e2e-spec.ts`,
-que además recorra las tablas con columna `store_id` y falle si alguna no tiene
-política, es parte de la fase 3.
+Esta comprobación se hizo a mano una vez y ahora vive en `test/rls.e2e-spec.ts`,
+que además recorre las tablas con columna `store_id` y falla si alguna no tiene
+RLS activado, forzado y con política.
 
 ---
 
 ## 10. Cómo se integra con el frontend
 
-El frontend SvelteKit (`Projects/personal/tienda-ropa`) consume esta API
+El frontend SvelteKit (`personal/shopping-sas`, package `tienda-ropa`) consume esta API
 **servidor contra servidor**: el navegador de la clienta nunca la llama.
 
 ### Quién pone la cookie
@@ -277,9 +356,11 @@ Tiene que ser así: la API vive en otro dominio, y una cookie suya no llegaría
 al navegador. Quien pone la cookie de sesión —httpOnly, en su propio dominio—
 es SvelteKit, con lo que recibe de aquí.
 
-El resultado es que el navegador solo ve una cookie opaca. El access token y el
-refresh token no pisan el cliente en ningún momento, ni siquiera dentro del
-HTML serializado.
+El resultado es que el navegador solo ve una cookie opaca. La cookie va
+**cifrada** con AES-256-GCM (`SESSION_SECRET` del frontend) y no solo firmada:
+una firma impediría falsificarla pero dejaría los tokens legibles para quien la
+vea. El access token y el refresh token no aparecen ni en la cookie ni dentro
+del HTML serializado.
 
 ### Dónde se renueva la sesión
 
@@ -289,14 +370,81 @@ actualizada antes de que nadie use el token.
 
 Si el refresh falla, la sesión se borra en lugar de arrastrarse. Un refresh
 rechazado significa que el token fue revocado, que expiró, o que la API detectó
-reuso — en los tres casos lo correcto es volver a entrar, no reintentar.
+reuso — en los tres casos lo correcto es volver a entrar, no reintentar. Si la
+API no respondió, la cookie se conserva: el refresh token sigue siendo bueno.
+
+El frontend se despliega en Vercel, y dos peticiones casi simultáneas con la
+misma cookie vencida pueden refrescar en instancias distintas con el mismo
+token. Por eso `TokenService.rotate` acepta un token recién rotado durante 30
+segundos (`ROTATION_GRACE_MS`) sin tomarlo como reuso. Fuera de esa ventana, o
+si la sesión sucesora ya se cerró, sigue revocando toda la cadena. Lo prueba
+`test/auth-refresh.e2e-spec.ts`.
+
+### La membresía, en cada carga del panel
+
+`requireAdmin` llama a `GET /auth/me` en cada carga del panel y comprueba que la
+tienda de la sesión siga entre las de la cuenta. Es el equivalente de la
+consulta a `profiles` de la versión con Supabase: quitarle el acceso a alguien
+surte efecto en la siguiente página, no cuando venza su token.
 
 ### Migración por rebanadas
 
-La tienda no se migra por capas sino por funciones completas. Hoy la
-autenticación ya es de esta API mientras el catálogo y los pedidos siguen en
-Supabase, y las dos cosas conviven sin romperse. Cada rebanada que se migra
-deja la tienda funcionando; Supabase se apaga cuando no quede ninguna.
+El plan era migrar por funciones completas, conviviendo con Supabase. Funcionó
+para la autenticación, que no comparte datos con nada. Para el resto no: el
+catálogo, el carrito, los pedidos, los cupones y el contenido leen y escriben
+las mismas filas. Mover solo el catálogo habría dejado a los pedidos
+descontando stock en una base mientras la dueña editaba precios en la otra.
+
+Por eso, después del login, el frontend pasó a la API **de una sola vez**
+(2026-09-15, rama `feature/integracion-api`), con los datos ya copiados. Desde
+entonces toda lectura y escritura de la tienda va por esta API. Supabase queda
+solo como almacenamiento de fotos hasta la fase 8.
+
+En el frontend:
+
+- **Tienda pública por host:** cada tienda es un subdominio de
+  `STORE_ROOT_DOMAIN` (`boutique.globerce.com`); el dominio raíz sirve
+  `STORE_SLUG` o, sin ella, lleva a `/registro`. El panel opera sobre la
+  tienda de la sesión y se cambia solo a la del subdominio si la cuenta es
+  miembro. Los dominios propios (`custom_domain`) todavía no se resuelven.
+- **Sesión sin tienda:** la de quien solo administra la plataforma. Entra a
+  `/plataforma`, nunca al panel.
+- **Traducción en un solo lugar:** `$lib/server/api/*` lee cada respuesta con
+  zod y la traduce a los tipos de dominio que ya usaban las páginas, así el
+  cambio casi no tocó componentes.
+- **Form actions del panel:** SvelteKit no ejecuta el `load` del layout en las
+  form actions, así que cada una exige la sesión por su cuenta (`panelContext`).
+  Con Supabase y la llave de servicio, esas acciones no verificaban sesión.
+- **IP de la visitante:** viaja en `X-Forwarded-For` en login, refresh, pedidos
+  y avisos, para que el límite por IP cuente a cada visitante (§ 3).
+- **Idempotencia del checkout:** la clave sale del contenido del envío en
+  ventanas de dos minutos, porque el formulario del carrito no genera una.
+
+### Migración de los datos
+
+`scripts/import-supabase.ts` (`pnpm db:import-supabase`) copia la tienda de
+Supabase a una tienda de esta API. Se corre primero con `--dry-run`, que hace
+todo —incluidos los inserts y la comparación de conteos— y deshace al final.
+
+- **Supabase no se toca:** la lectura va en una transacción `read only` que
+  Postgres hace cumplir, no la disciplina del script.
+- **Todo o nada:** la escritura es una transacción; si una fila falla o los
+  conteos no coinciden con el origen, no queda nada.
+- **Los ids se conservan:** fotos, variantes y pedidos siguen apuntando a lo
+  mismo, y `--replace` repite la importación con el mismo resultado.
+- **Antes de escribir se revisan las reglas que Supabase no exigía** (total del
+  pedido, línea = precio × cantidad, ventana del cupón, formato del tono) y se
+  devuelve la lista completa de lo que falla, no el primer error de Postgres.
+- **Las contraseñas se copian como están.** Supabase Auth guarda bcrypt;
+  `PasswordService` lo acepta y `AuthService.login` lo reemplaza por argon2id en
+  el primer login correcto, que es el único momento en que se tiene la
+  contraseña en claro. bcrypt se lee, nunca se escribe.
+- **Los números de pedido siguen desde el último.** En Supabase salían de una
+  secuencia global que empezó en 1000; acá son por tienda, y repetir un número
+  que una clienta ya tiene en su chat sería confuso.
+
+El origen tiene que ser el pooler de Supabase: la conexión directa solo tiene
+IPv6.
 
 ### Verificado de punta a punta
 
@@ -310,9 +458,278 @@ deja la tienda funcionando; Supabase se apaga cuando no quede ninguna.
 | `POST /admin/logout`             | 303 al login, y el refresh token queda revocado en la API |
 | Tienda pública durante todo esto | sigue respondiendo 200                                    |
 
+La primera versión de esta integración se perdió sin subir al cambiar de
+equipo. Se rehízo y se volvió a verificar el 2026-09-14 (rama
+`feature/integracion-api` del frontend), con dos comprobaciones más: un
+`redirectTo` externo en el login termina en `/admin`, y la cookie no contiene
+un JWT legible.
+
 ### Una trampa de esta máquina
 
 `API_URL` apunta a `127.0.0.1`, no a `localhost`. En Windows, Node resuelve
 `localhost` a `::1` antes que a IPv4, y la API escucha en IPv4: con `localhost`
 la petición muere con ECONNREFUSED y el login responde «No pudimos conectar con
 el servidor», que parece un problema de credenciales y no lo es.
+
+---
+
+## 11. Las plantillas de la vitrina
+
+`store_settings.template` guarda con qué diseño se pinta la tienda. La API
+solo guarda y valida el código (`src/shared/content/templates.ts`); la
+plantilla misma —paleta, tipografía y cómo se arma la portada— vive en el
+frontend, que es quien la pinta. Esa frontera es la que hace que estrenar un
+diseño sea desplegar el frontend y no migrar la base.
+
+La columna es texto y no un enum de Postgres por lo mismo: agregar una
+plantilla no puede costar una migración de esquema. Tampoco lleva CHECK, y no
+por descuido: el frontend traduce un código que no conoce a la plantilla de
+por defecto, así que una tienda que quedó con una plantilla retirada sigue
+abriendo en vez de fallar. El que rechaza lo que no existe es el DTO, que es
+quien sabe qué se ofrece hoy.
+
+Una plantilla cambia el vestido, nunca el contenido: las mismas prendas, los
+mismos textos de portada y los mismos pedidos. Por eso cambiarla es un PATCH a
+los ajustes y no una migración de datos, y por eso se puede cambiar cuantas
+veces se quiera sin perder nada.
+
+## 11.1 El asistente de la tienda
+
+`POST /public/:storeSlug/assistant` le responde a la clienta con el catálogo
+de esa tienda. La decisión de diseño que manda sobre todas las demás: el
+modelo no recibe el catálogo, recibe herramientas para consultarlo. De ahí
+salen tres propiedades que no se consiguen de otro modo.
+
+No puede inventar. Precio, talla y envío salen de una consulta —la misma que
+alimenta la vitrina, recortada a cinco resultados—, así que lo que no está en
+la base no se puede afirmar. Un asistente de tienda que improvisa un precio le
+crea un problema a la dueña, no al modelo.
+
+No puede mirar otra tienda. Las herramientas corren dentro de `forStore`, con
+el id que resolvió el slug: el aislamiento es el mismo del resto de la API, no
+uno nuevo escrito para esto.
+
+No se desboca en costo. Cada respuesta cuesta, y el tráfico lo pone la tienda,
+no quien paga el plan; por eso `plans.ai_replies_per_month` es un número y no
+un booleano, el consumo se cuenta en `ai_replies` y el driver sale apagado
+(`AI_DRIVER=none`). De la conversación no se guarda el texto: para contar el
+tope y medir el costo bastan los tokens, y esas conversaciones son de las
+clientas de la tienda.
+
+Cuando algo falla —sin cuota, sin respuesta, sin red— la salida es WhatsApp,
+que es como esta tienda cierra la venta igual.
+
+## 11.2 Los pagos de cada tienda
+
+La plata de una venta es de la tienda, no de Globerce. Cada dueña conecta su
+propia cuenta de comercio y el cobro sale con SUS llaves: así no somos
+agregador —no manejamos dinero ajeno—, no hace falta figura ni licencia para
+eso, y ninguna quiebra nuestra congela la plata de nadie. A cambio, cada tienda
+pasa una vez por el KYC de la pasarela.
+
+Las llaves secretas se guardan cifradas con AES-256-GCM
+(`shared/payments/secret-box.ts`). Son secretos ajenos: quien los tenga puede
+mover la plata de esa tienda, y un volcado robado no puede ser también el robo
+de todas las cuentas de comercio. La pública no se cifra: viaja en cada enlace
+de pago. Ninguna secreta vuelve a salir de la API, ni para confirmar que se
+guardó.
+
+El monto sale del pedido que está en la base, nunca de la petición, y la
+dirección de vuelta tiene que ser un host nuestro: sin esa comprobación, quien
+arma el cobro elige a dónde va la clienta justo después de escribir los datos
+de su tarjeta.
+
+Cada tienda tiene su propia URL de eventos (`/payments/events/:storeId`),
+que es la que pega en el panel de la pasarela. Saber a qué tienda apunta esa
+URL no autoriza nada: lo que autentica el evento es la firma, y se comprueba
+con el secreto de ESA tienda.
+
+El pedido gana un estado de cobro propio, separado de su estado. Una venta
+contra entrega está confirmada y sin pagar; una pagada puede terminar
+cancelada. Y pagar no confirma el pedido: confirmar es una decisión de la
+tienda —tiene que ver si puede despacharlo— y el pago no la reemplaza.
+
+## 12. Las fotos
+
+### Por qué un almacenamiento intercambiable
+
+`MediaStorage` es una clase abstracta con dos implementaciones: disco local y
+S3. En producción el bucket es Cloudflare R2 (sin costo por descarga); los
+pasos están en `DEPLOY.md`. Los servicios piden `MediaStorage` y el entorno decide cuál hay detrás
+(`STORAGE_DRIVER`). El driver local existe porque en desarrollo y en un
+despliegue de un solo servidor un bucket es fricción sin beneficio; el S3
+existe porque con dos instancias cada una tendría su disco, y una foto subida
+por una no existiría para la otra. R2, S3 y MinIO hablan el mismo protocolo,
+así que una implementación cubre las tres; el adaptador S3 se prueba contra
+MinIO (`test/storage-s3.e2e-spec.ts`, se salta sin credenciales).
+
+### El orden de las operaciones
+
+Una foto son tres archivos y una fila, y no hay transacción que abarque los
+dos mundos. El orden elegido hace que ningún fallo deje una fila apuntando a
+un archivo que no existe:
+
+- **Subir:** convertir (fuera de la transacción, porque `sharp` tarda y no
+  hay razón para tener filas bloqueadas), comprobar, escribir los archivos,
+  crear la fila. Si crear la fila falla, se borran los archivos.
+- **Quitar:** borrar la fila, confirmar, y después borrar los archivos. Si
+  borrar los archivos falla, queda un huérfano —espacio perdido— que es mucho
+  mejor que lo contrario.
+- **Reemplazar la portada:** la vieja se borra al final, con la nueva ya
+  guardada.
+
+### Claves
+
+`stores/<storeId>/<carpeta>/<slug>/<marca>-<tamaño>.webp`. La tienda primero,
+para que un bucket compartido quede ordenado por inquilino. La marca de tiempo
+hace que una clave nunca se reutilice, y por eso el caché puede ser inmutable
+(`max-age` de un año). Las fotos migradas desde Supabase conservan su ruta
+vieja bajo el prefijo de la tienda: así el script sabe cuáles ya migró.
+
+### Una trampa de compilación
+
+`sharp` exporta con `module.exports =`. Sin `esModuleInterop`, TypeScript
+compila `import sharp from 'sharp'` a `sharp.default`, que no existe, y falla
+en tiempo de ejecución (SWC, el compilador de `nest build`, sí lo tolera: se
+notó en los tests, que usan `ts-jest`). Está activado en `tsconfig.json`.
+
+---
+
+## 13. La plataforma
+
+### Quién entra
+
+`PlatformAdminGuard` consulta `platform_admins` en cada petición, igual que
+la membresía. Ningún endpoint escribe esa tabla: se entra con
+`pnpm platform:grant-admin --email …`, con acceso a la base. Quien decide
+quién ve todas las tiendas no puede ser una petición HTTP.
+
+### RLS no se relaja para la plataforma
+
+`subscriptions` y `payments` están bajo RLS. La plataforma las lee tienda por
+tienda con `forStore`, una consulta más por fila del listado. Lo mismo hace el
+resumen del negocio (`/platform/dashboard`, `/platform/payments`): recorre
+todas las tiendas para sumar ingresos y MRR. Con cientos de tiendas convendrá
+guardar esos totales precalculados, no relajar el aislamiento. `_count` de
+`products` u `orders` desde `stores` también cae bajo RLS y devuelve cero sin
+contexto: se contó así una vez y la consola mostró "0 / 0" para todas. La alternativa
+—una política que deje ver todo a un contexto "plataforma"— es exactamente el
+agujero que RLS existe para no tener. Con cientos de tiendas el listado
+necesitará paginar; hoy tiene un techo de 200.
+
+### Estados
+
+| Estado de la tienda | Quién lo pone            | Tienda pública | Panel        |
+| ------------------- | ------------------------ | -------------- | ------------ |
+| `TRIAL`             | el registro              | vende          | completo     |
+| `ACTIVE`            | un pago, o la plataforma | vende          | completo     |
+| `PAST_DUE`          | `reconcile`              | vende          | solo lectura |
+| `SUSPENDED`         | la plataforma, a mano    | 404            | solo lectura |
+
+`PAST_DUE` no corta la venta: cortarle las ventas a una tienda por un pago
+atrasado castiga a sus clientas, y esa es una decisión de una persona, no de un
+cron. Lo que sí queda en pausa es el panel: `StoreRolesGuard` rechaza toda
+escritura con `error: subscription_required` (y con `store_suspended` si está
+suspendida), salvo las rutas marcadas con `@AllowedWithoutSubscription()`, que
+hoy son las de pagar: es justo lo que saca a la tienda de ahí.
+
+Un pago devuelve a `ACTIVE` una tienda en prueba o vencida, pero no una
+suspendida: suspender fue una decisión y reactivar es otra.
+
+Un pago es un asiento que no se edita. El período vigente se extiende hasta el
+fin del pago si ese fin es posterior; un pago atrasado no lo acorta.
+
+### Cobrarse sola
+
+`POST /stores/:storeId/subscription/checkout` devuelve a dónde mandar a la
+dueña a pagar. Lo que se cobra no viene de la petición: el monto sale del plan
+que hay en la base, porque si viniera de afuera cualquiera pediría pagar cien
+pesos por el Pro.
+
+Lo que pone el plan al día **no** es que la dueña vuelva a la página. Puede
+volver sin haber pagado, o no volver nunca: el navegador de quien paga no es
+una fuente de verdad. Lo confirma el evento firmado que manda la pasarela a
+`POST /payments/events`, que es la única superficie de la API que atiende a
+alguien que no es nuestro frontend —va `@OpenRoute()`, porque Wompi no conoce
+el secreto compartido y no tiene por qué—. Lo que la autentica es la firma del
+propio evento.
+
+La referencia (`sub-<storeId>-<plan>-<azar>`) es lo que dice a qué corresponde
+ese pago, porque el evento llega sin sesión. Un pago por menos del precio del
+plan no compra un mes, y el mismo pago dos veces tampoco: la referencia de la
+transacción se guarda en `payments` y si ya estaba, no se aplica de nuevo —las
+pasarelas reintentan—.
+
+`PAYMENTS_DRIVER` decide con qué se cobra: `none` (los pagos los registra la
+plataforma a mano, que es como estaba antes), `simulated` (una pantalla de
+mentira que aprueba sin cobrar, para probar el flujo entero y para enseñar el
+producto) y `wompi`. Sale en `none` a propósito: una pantalla que regala
+suscripciones no puede quedar encendida porque alguien olvidó apagarla.
+
+### El vencimiento
+
+No hay reloj dentro de la API. `reconcile` marca como vencidas las pruebas
+terminadas y los períodos pasados; se dispara una vez al día con
+`pnpm platform:reconcile` (cron del servidor) o desde la consola. Un mismo
+criterio (`isOverdue`) decide el cron y el filtro "vencidas" del listado.
+
+### Límites del plan
+
+`assertWithinPlan` se llama donde se crea lo que el plan acota: prendas,
+fotos por prenda y pedidos del mes (este último con las variantes ya
+bloqueadas, para que dos pedidos simultáneos no pasen los dos como el último).
+Responde 403 con `error: plan_limit` y `details: { limit, max }`, para que el
+panel lo distinga de un permiso denegado. Bajar de plan no borra nada: lo que
+sobra se queda, y solo se bloquea crear más.
+
+---
+
+## 14. Cuentas y equipo
+
+### Enlaces por correo
+
+Recuperar la contraseña y aceptar una invitación funcionan con un enlace de un
+solo uso: 32 bytes aleatorios, y en la base solo su SHA-256 (la misma razón
+que `refresh_tokens`). La base del enlace sale de `FRONTEND_URL`, nunca del
+`Host` de la petición: armarlo con el host que manda el cliente deja que un
+atacante pida el enlace de otra cuenta y lo reciba apuntando a su dominio.
+
+El correo es intercambiable como las fotos: `MAIL_DRIVER=log` lo escribe en el
+log de la API (desarrollo, y los e2e lo leen de memoria) y `smtp` lo manda de
+verdad.
+
+### Recuperar la contraseña
+
+- `forgot` responde 204 exista o no la cuenta, y el correo sale sin esperarlo:
+  esperar haría que una cuenta real tarde lo que tarda el SMTP y una
+  inexistente nada, y el cronómetro volvería a enumerar cuentas.
+- Solo vale el último enlace pedido, por una hora.
+- `reset` marca el enlace como usado en la misma sentencia que lo comprueba
+  (dos envíos simultáneos no pasan los dos), levanta el bloqueo por intentos y
+  cierra **todas** las sesiones: quien recupera suele hacerlo porque alguien
+  más entró.
+- `change` exige la contraseña actual y cierra las demás sesiones, no la que
+  hizo el cambio.
+
+### Invitaciones
+
+`store_invitations` está bajo RLS: pertenece a la tienda. Aceptar llega sin
+contexto, así que el enlace lleva el `storeId` delante del secreto
+(`<storeId>.<secreto>`): con él se abre el contexto y se busca por el hash.
+El `storeId` no es secreto; el secreto sí.
+
+- Solo la dueña invita, cambia roles y quita miembros (`@Roles('OWNER')`).
+- Una invitación nueva al mismo correo anula la pendiente.
+- Si el correo ya tiene cuenta, se acepta con **su** contraseña, por el mismo
+  camino del login (bloqueo incluido): el enlace prueba acceso al correo, no a
+  la cuenta. Si no, se crea la cuenta ahí.
+- Cuenta nueva, invitación usada y membresía van en una transacción: una
+  invitación que otra pestaña aceptó un instante antes no deja una cuenta
+  suelta.
+
+### Nunca sin dueña
+
+Degradar o quitar a una dueña bloquea las filas de todas las dueñas de la
+tienda antes de contarlas. Dos dueñas que se degradan la una a la otra a la
+vez se serializan, y la segunda ve el resultado de la primera. Quitar a alguien
+además cierra sus sesiones atadas a esa tienda.
