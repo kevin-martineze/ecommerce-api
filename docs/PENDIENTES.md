@@ -27,10 +27,10 @@ frontend no está desplegado en ninguna parte y no hay dominio comprado.
       para la API). Sin él no hay subdominios: ver § 4.
 - [ ] **Frontend desplegado.** Hasta que no lo esté, Globerce no existe para
       nadie.
-- [ ] **Correo de verdad.** El servidor tiene `MAIL_DRIVER=log`: recuperar la
-      contraseña e invitar a alguien al equipo escriben en un log y nadie
-      recibe nada. Necesita un SMTP y, en el servidor, `FRONTEND_URL`
-      apuntando al frontend y no a la propia API.
+- [x] **Correo de verdad.** (2026-09-20) Resend por SMTP, enviando desde
+      `send.globerce.store` con DKIM, SPF y DMARC propios. Se usa un
+      subdominio para no ocupar los MX del dominio raíz. `FRONTEND_URL` ya
+      apuntaba al frontend, no a la API.
 - [x] **Cron de vencimientos.** (2026-09-19) En `/etc/cron.d/globerce`, 08:40
       UTC. De paso salió un error que nadie había visto: las dos tareas
       importaban `dotenv`, que es dependencia de desarrollo y no está en la
