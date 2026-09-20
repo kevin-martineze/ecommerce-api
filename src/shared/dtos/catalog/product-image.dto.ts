@@ -10,7 +10,7 @@ export class UploadProductImageDto {
   file!: unknown;
 
   @ApiPropertyOptional({ format: 'uuid', description: 'Color al que corresponde la foto.' })
-  colorId?: string;
+  optionValueId?: string;
 
   @ApiPropertyOptional({ description: 'Texto alternativo. Si no viene, el nombre de la prenda.' })
   alt?: string;

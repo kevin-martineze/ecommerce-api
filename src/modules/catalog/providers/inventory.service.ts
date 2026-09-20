@@ -3,6 +3,8 @@ import { LOW_STOCK_THRESHOLD } from '@shared/commerce/stock';
 import { InventoryDto, InventoryGroupDto } from '@shared/dtos/catalog/inventory.dto';
 import { PrismaService } from '@db/prisma.service';
 
+import { VARIANT_INCLUDE, variantLabel, variantValues } from './variant-mapping';
+
 /** Mismo techo que el panel actual. */
 const INVENTORY_LIMIT = 400;
 
@@ -11,11 +13,11 @@ export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Variantes de la más escasa a la más holgada, agrupadas por prenda.
+   * Variantes de la más escasa a la más holgada, agrupadas por producto.
    *
-   * Se agrupa conservando el orden en que aparece cada prenda, así la primera
+   * Se agrupa conservando el orden en que aparece cada producto, así la primera
    * es la que tiene la variante más cerca de agotarse: se revisa como quien
-   * recorre el perchero empezando por lo que falta.
+   * recorre el catálogo empezando por lo que falta.
    */
   list(storeId: string, onlyLowStock: boolean): Promise<InventoryDto> {
     return this.prisma.forStore(storeId, async (tx) => {
@@ -27,8 +29,7 @@ export class InventoryService {
         orderBy: [{ stock: 'asc' }, { id: 'asc' }],
         take: INVENTORY_LIMIT,
         include: {
-          color: { select: { name: true, hex: true } },
-          size: { select: { label: true } },
+          ...VARIANT_INCLUDE,
           product: { select: { id: true, name: true, slug: true, status: true } },
         },
       });
@@ -36,6 +37,7 @@ export class InventoryService {
       const groups = new Map<string, InventoryGroupDto>();
 
       for (const variant of variants) {
+        const values = variantValues(variant);
         const group = groups.get(variant.productId) ?? {
           productId: variant.product.id,
           name: variant.product.name,
@@ -49,9 +51,10 @@ export class InventoryService {
           sku: variant.sku,
           stock: variant.stock,
           active: variant.active,
-          colorName: variant.color.name,
-          colorHex: variant.color.hex,
-          sizeLabel: variant.size.label,
+          label: variantLabel(values),
+          // El primer valor que traiga tono: en la ropa es el color, y en un
+          // producto sin colores no hay ninguno y se pinta sin muestra.
+          hex: values.find((valor) => valor.hex !== null)?.hex ?? null,
         });
 
         groups.set(variant.productId, group);

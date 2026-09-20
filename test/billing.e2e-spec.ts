@@ -61,8 +61,10 @@ describe('Pagar el plan (e2e)', () => {
     api.call('POST', '/payments/events', undefined, { reference, amountCop });
 
   /** Una escritura cualquiera del panel: lo que se pierde con el plan vencido. */
-  const write = (session: Session, label: string) =>
-    api.call<{ error?: string }>('POST', `/stores/${session.storeId}/sizes`, session, { label });
+  const write = (session: Session, name: string) =>
+    api.call<{ error?: string }>('POST', `/stores/${session.storeId}/categories`, session, {
+      name,
+    });
 
   /** Vence el período y deja la tienda como la dejaría `reconcile`. */
   const expire = (session: Session, storeStatus: 'PAST_DUE' | 'SUSPENDED') =>

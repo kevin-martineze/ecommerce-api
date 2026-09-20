@@ -66,11 +66,11 @@ export class QuotedLineDto {
   @ApiProperty()
   productSlug!: string;
 
-  @ApiProperty()
-  colorName!: string;
-
-  @ApiProperty()
-  sizeLabel!: string;
+  @ApiProperty({
+    example: 'Rojo · M',
+    description: 'Cómo se llamaba la variante el día de la compra. Vacío si no tenía ejes.',
+  })
+  variantLabel!: string;
 
   @ApiProperty({ nullable: true })
   sku!: string | null;
@@ -274,11 +274,8 @@ export class StockProblemDto {
   @ApiProperty()
   product!: string;
 
-  @ApiProperty()
-  color!: string;
-
-  @ApiProperty()
-  size!: string;
+  @ApiProperty({ example: 'Rojo · M', description: 'Vacío si el producto no tiene ejes.' })
+  variantLabel!: string;
 }
 
 export class OrderTokenQueryDto {
@@ -297,11 +294,11 @@ export class PublicOrderItemDto {
   @ApiProperty()
   productSlug!: string;
 
-  @ApiProperty()
-  colorName!: string;
-
-  @ApiProperty()
-  sizeLabel!: string;
+  @ApiProperty({
+    example: 'Rojo · M',
+    description: 'Cómo se llamaba la variante el día de la compra. Vacío si no tenía ejes.',
+  })
+  variantLabel!: string;
 
   @ApiProperty({ nullable: true })
   sku!: string | null;

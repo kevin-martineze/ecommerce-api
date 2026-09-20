@@ -3,6 +3,11 @@ import { LOW_STOCK_THRESHOLD } from '@shared/commerce/stock';
 import { DashboardDto } from '@shared/dtos/orders/order-admin.dto';
 import { startOfMonthInBogota } from '@shared/utils/bogota-time';
 import { PrismaService } from '@db/prisma.service';
+import {
+  VARIANT_INCLUDE,
+  variantLabel,
+  variantValues,
+} from '@modules/catalog/providers/variant-mapping';
 
 /** Un pendiente con más de esto retiene stock sin avanzar, y el resumen lo destaca. */
 const STALE_PENDING_MS = 24 * 60 * 60 * 1000;
@@ -49,8 +54,7 @@ export class DashboardService {
         take: LOW_STOCK_LIMIT,
         include: {
           product: { select: { name: true } },
-          color: { select: { name: true } },
-          size: { select: { label: true } },
+          ...VARIANT_INCLUDE,
         },
       });
 
@@ -67,8 +71,7 @@ export class DashboardService {
           variantId: variant.id,
           stock: variant.stock,
           productName: variant.product.name,
-          colorName: variant.color.name,
-          sizeLabel: variant.size.label,
+          variantLabel: variantLabel(variantValues(variant)),
         })),
         pendingRestock,
       };

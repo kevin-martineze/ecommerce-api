@@ -43,11 +43,11 @@ export class OrderItemAdminDto {
   @ApiProperty()
   productSlug!: string;
 
-  @ApiProperty()
-  colorName!: string;
-
-  @ApiProperty()
-  sizeLabel!: string;
+  @ApiProperty({
+    example: 'Rojo · M',
+    description: 'Cómo se llamaba la variante el día de la compra. Vacío si no tenía ejes.',
+  })
+  variantLabel!: string;
 
   @ApiProperty({ nullable: true })
   sku!: string | null;
@@ -182,11 +182,11 @@ export class LowStockDto {
   @ApiProperty()
   productName!: string;
 
-  @ApiProperty()
-  colorName!: string;
-
-  @ApiProperty()
-  sizeLabel!: string;
+  @ApiProperty({
+    example: 'Rojo · M',
+    description: 'Cómo se llamaba la variante el día de la compra. Vacío si no tenía ejes.',
+  })
+  variantLabel!: string;
 }
 
 export class DashboardDto {

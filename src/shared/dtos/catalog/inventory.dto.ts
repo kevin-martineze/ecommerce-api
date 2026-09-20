@@ -24,14 +24,11 @@ export class InventoryVariantDto {
   @ApiProperty()
   active!: boolean;
 
-  @ApiProperty()
-  colorName!: string;
+  @ApiProperty({ example: 'Rojo · M', description: 'Vacío si el producto no tiene ejes.' })
+  label!: string;
 
-  @ApiProperty()
-  colorHex!: string;
-
-  @ApiProperty()
-  sizeLabel!: string;
+  @ApiProperty({ nullable: true, description: 'Tono del valor que sea un color, si lo hay.' })
+  hex!: string | null;
 }
 
 export class InventoryGroupDto {
@@ -59,7 +56,7 @@ export class InventoryDto {
 
   @ApiProperty({
     type: [InventoryGroupDto],
-    description: 'Agrupado por prenda; primero las que tienen la variante más escasa.',
+    description: 'Agrupado por producto; primero las que tienen la variante más escasa.',
   })
   groups!: InventoryGroupDto[];
 }

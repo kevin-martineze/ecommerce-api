@@ -29,9 +29,27 @@ export function skuBase(productSlug: string): string {
   return productSlug.replace(/-/g, '').toUpperCase().slice(0, 10);
 }
 
-/** SKU legible: "vestido-negro-largo" + "negro" + "m" → "VESTIDONEG-NEGRO-M". */
-export function buildSku(productSlug: string, colorSlug: string, sizeLabel: string): string {
-  return `${skuBase(productSlug)}-${colorSlug.toUpperCase()}-${sizeLabel.toUpperCase()}`;
+/**
+ * SKU legible a partir del producto y los valores de sus ejes.
+ *
+ * "vestido-negro-largo" + ["Negro", "M"] → "VESTIDONEG-NEGRO-M".
+ * Un producto sin ejes se queda con la base: "VESTIDONEG".
+ *
+ * Los valores se limpian de acentos y espacios porque un SKU se teclea y se
+ * lee en voz alta: "CAFÉ ESPECIAL" no sirve de código, "CAFEESPECIAL" sí.
+ */
+export function buildSku(productSlug: string, values: readonly string[]): string {
+  const partes = values
+    .map((valor) =>
+      valor
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toUpperCase(),
+    )
+    .filter((parte) => parte.length > 0);
+
+  return [skuBase(productSlug), ...partes].join('-');
 }
 
 /**

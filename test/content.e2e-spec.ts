@@ -7,7 +7,7 @@ import { Method, Session, startTestApp, TestApp, TestFile } from './utils/test-a
 
 /**
  * Contenido que administra el panel y se ve en la tienda: ajustes, portada,
- * colecciones y fotos de prenda.
+ * colecciones y fotos de producto.
  *
  * Cada escritura del panel se comprueba también desde la superficie pública:
  * el punto de estos endpoints es que lo que la dueña edita llegue a la tienda.
@@ -279,7 +279,7 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
     });
   });
 
-  describe('fotos de prenda', () => {
+  describe('fotos de producto', () => {
     let first: ImageBody;
     let second: ImageBody;
 
@@ -319,18 +319,21 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
       expect(thumb.width).toBe(400);
     });
 
-    it('rechaza lo que no es imagen y el color de otra tienda, sin dejar archivos', async () => {
-      const otherColors = (await panel<{ id: string }[]>('GET', '/colors', undefined, other)).body;
+    it('rechaza lo que no es imagen y el valor de otro producto, sin dejar archivos', async () => {
+      // Un uuid con forma válida que no es valor de este producto. La
+      // comprobación mira el PRODUCTO y no solo la tienda, porque los valores
+      // cuelgan del producto: el "Rojo" de otro producto no significa nada acá.
+      const ajeno = '11111111-2222-4333-8444-555555555555';
 
       const garbage = await uploadPhoto();
-      const foreignColor = await uploadPhoto({ colorId: otherColors[0]?.id ?? '' }, await photo());
+      const foreignValue = await uploadPhoto({ optionValueId: ajeno }, await photo());
 
       expect(garbage.status).toBe(400);
-      expect(foreignColor.status).toBe(400);
+      expect(foreignValue.status).toBe(400);
       expect(await publicImages()).toEqual([first.id, second.id]);
     });
 
-    it('respeta el límite de fotos por prenda del plan', async () => {
+    it('respeta el límite de fotos por producto del plan', async () => {
       await api.withOwner((client) =>
         client.query(
           `update plans set max_images_per_product = 2 where code = (select plan_code from subscriptions where store_id = $1)`,
@@ -371,7 +374,7 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
       expect(await publicImages()).toEqual([second.id]);
     });
 
-    it('borrar la prenda borra las fotos que quedaban', async () => {
+    it('borrar el producto borra las fotos que quedaban', async () => {
       expect((await panel('DELETE', `/products/${productId}`)).status).toBe(200);
       expect(storedFiles(second.storagePath)).toEqual([false, false, false]);
     });

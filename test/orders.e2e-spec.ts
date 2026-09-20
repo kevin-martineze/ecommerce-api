@@ -105,32 +105,18 @@ describe('Pedidos y comercio (e2e)', () => {
       })
     ).body.id;
 
-    const product = (
-      await panel<{ id: string }>('POST', '/products', {
-        name: 'Vestido Pedido',
-        basePrice: 100000,
-        status: 'ACTIVE',
-      })
-    ).body;
+    const product = await api.seedProduct(
+      shop,
+      { name: 'Vestido Pedido', basePrice: 100000, status: 'ACTIVE' },
+      [
+        { name: 'Color', values: [{ value: 'Negro', hex: '#000000' }] },
+        { name: 'Talla', values: [{ value: 'S' }, { value: 'M' }] },
+      ],
+      0,
+    );
 
-    const colors = (await panel<{ id: string; slug: string }[]>('GET', '/colors')).body;
-    const sizes = (await panel<{ id: string; label: string }[]>('GET', '/sizes')).body;
-
-    await panel('POST', `/products/${product.id}/variants`, {
-      colorIds: colors.filter((c) => c.slug === 'negro').map((c) => c.id),
-      sizeIds: sizes.filter((s) => s.label === 'M' || s.label === 'S').map((s) => s.id),
-      defaultStock: 0,
-    });
-
-    const detail = (
-      await panel<{ variants: { id: string; size: { label: string } }[] }>(
-        'GET',
-        `/products/${product.id}`,
-      )
-    ).body;
-
-    variantM = detail.variants.find((v) => v.size.label === 'M')?.id ?? '';
-    variantS = detail.variants.find((v) => v.size.label === 'S')?.id ?? '';
+    variantM = product.variants.find((v) => v.label.endsWith('M'))?.id ?? '';
+    variantS = product.variants.find((v) => v.label.endsWith('S'))?.id ?? '';
 
     await panel('PATCH', `/variants/${variantM}`, { stock: 3 });
     await panel('PATCH', `/variants/${variantS}`, { stock: 1, priceOverride: 120000 });

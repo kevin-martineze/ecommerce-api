@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Param, ParseUUIDPipe, Patch, Post } from '@ne
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { StoreRoute } from '@shared/decorators/store-route.decorator';
 import {
+  CreateVariantDto,
   DeleteVariantResultDto,
   GenerateVariantsDto,
   GenerateVariantsResultDto,
@@ -32,6 +33,18 @@ export class VariantsController {
     @Body() dto: GenerateVariantsDto,
   ): Promise<GenerateVariantsResultDto> {
     return this.variants.generate(storeId, productId, dto);
+  }
+  // Ruta aparte de la de generar: una crea TODAS las combinaciones que faltan
+  // y la otra crea UNA concreta. Compartir verbo y URL obligaría a adivinar
+  // cuál se quiso por la forma del cuerpo.
+  @Post('products/:productId/variants/one')
+  @ApiOperation({ summary: 'Crea una combinación concreta, eligiendo un valor por eje.' })
+  create(
+    @Param('storeId') storeId: string,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() dto: CreateVariantDto,
+  ): Promise<VariantDto> {
+    return this.variants.create(storeId, productId, dto);
   }
 
   @Patch('variants/:variantId')

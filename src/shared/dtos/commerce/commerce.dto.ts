@@ -206,11 +206,8 @@ export class RestockRequestAdminDto {
   @ApiProperty()
   productSlug!: string;
 
-  @ApiProperty()
-  colorName!: string;
-
-  @ApiProperty()
-  sizeLabel!: string;
+  @ApiProperty({ example: 'Rojo · M', description: 'Vacío si el producto no tiene ejes.' })
+  variantLabel!: string;
 }
 
 export class UpdateRestockRequestDto {

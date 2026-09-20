@@ -35,15 +35,26 @@ export async function assertCategoryInStore(
   }
 }
 
-export async function assertColorInStore(
+/**
+ * Que un valor de opción sea de ESE producto, no solo de esa tienda.
+ *
+ * La comprobación por tienda ya no basta: los valores cuelgan del producto, y
+ * colgarle a una foto el "Rojo" de otro producto dejaría una referencia que no
+ * significa nada en su pantalla.
+ */
+export async function assertOptionValueInProduct(
   tx: TenantClient,
   storeId: string,
-  colorId: string,
+  productId: string,
+  optionValueId: string,
 ): Promise<void> {
-  const color = await tx.color.findFirst({ where: { id: colorId, storeId }, select: { id: true } });
+  const valor = await tx.productOptionValue.findFirst({
+    where: { id: optionValueId, storeId, option: { productId } },
+    select: { id: true },
+  });
 
-  if (!color) {
-    throw new BadRequestException('Ese color no existe en esta tienda.');
+  if (!valor) {
+    throw new BadRequestException('Ese valor no es de este producto.');
   }
 }
 
@@ -75,49 +86,4 @@ export async function assertCollectionInStore(
   if (!collection) {
     throw new BadRequestException('Esa colección no existe en esta tienda.');
   }
-}
-
-export interface ColorRef {
-  id: string;
-  slug: string;
-}
-
-export interface SizeRef {
-  id: string;
-  label: string;
-}
-
-/** Devuelve colores y tallas en su orden de catálogo, o 400 si alguno no es de la tienda. */
-export async function findColorsAndSizesInStore(
-  tx: TenantClient,
-  storeId: string,
-  colorIds: string[],
-  sizeIds: string[],
-): Promise<{ colors: ColorRef[]; sizes: SizeRef[] }> {
-  const uniqueColorIds = [...new Set(colorIds)];
-  const uniqueSizeIds = [...new Set(sizeIds)];
-
-  // En serie y no con Promise.all: la transacción interactiva usa UNA conexión,
-  // y una conexión de Postgres atiende una consulta a la vez.
-  const colors = await tx.color.findMany({
-    where: { storeId, id: { in: uniqueColorIds } },
-    select: { id: true, slug: true },
-    orderBy: { sortOrder: 'asc' },
-  });
-
-  if (colors.length !== uniqueColorIds.length) {
-    throw new BadRequestException('Alguno de los colores elegidos no existe en esta tienda.');
-  }
-
-  const sizes = await tx.size.findMany({
-    where: { storeId, id: { in: uniqueSizeIds } },
-    select: { id: true, label: true },
-    orderBy: { sortOrder: 'asc' },
-  });
-
-  if (sizes.length !== uniqueSizeIds.length) {
-    throw new BadRequestException('Alguna de las tallas elegidas no existe en esta tienda.');
-  }
-
-  return { colors, sizes };
 }

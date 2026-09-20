@@ -13,7 +13,7 @@ jest.setTimeout(30_000);
 interface Card {
   slug: string;
   inStock: boolean;
-  colors: { slug: string }[];
+  swatches: { value: string; hex: string }[];
 }
 
 interface Page {
@@ -25,7 +25,7 @@ interface Page {
 interface PanelProduct {
   id: string;
   slug: string;
-  variants: { id: string; color: { slug: string }; size: { label: string } }[];
+  variants: { id: string; label: string }[];
 }
 
 describe('Tienda pública (e2e)', () => {
@@ -44,19 +44,21 @@ describe('Tienda pública (e2e)', () => {
     shop = await api.register('shop');
     other = await api.register('other');
 
-    const panel = <T>(method: 'GET' | 'POST' | 'PATCH', url: string, payload?: object) =>
+    const panel = <T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, payload?: object) =>
       api.call<T>(method, `/stores/${shop.storeId}${url}`, shop, payload);
-
-    const colors = (await panel<{ id: string; slug: string }[]>('GET', '/colors')).body;
-    const sizes = (await panel<{ id: string; label: string }[]>('GET', '/sizes')).body;
-    const colorId = (slug: string) => colors.find((c) => c.slug === slug)?.id;
-    const sizeId = (label: string) => sizes.find((s) => s.label === label)?.id;
 
     const dresses = (await panel<{ id: string }>('POST', '/categories', { name: 'Vestidos' })).body;
     const hidden = (await panel<{ id: string }>('POST', '/categories', { name: 'Oculta' })).body;
 
     await panel('PATCH', `/categories/${hidden.id}`, { active: false });
 
+    /**
+     * Crea el producto con sus ejes y deja cada combinación en el stock pedido.
+     *
+     * Se declaran los ejes con TODOS los valores que aparecen y luego se ajusta
+     * el stock de cada variante: así el producto queda con las combinaciones que
+     * de verdad tendría una tienda, incluida alguna en cero.
+     */
     const create = async (
       key: string,
       body: object,
@@ -64,12 +66,40 @@ describe('Tienda pública (e2e)', () => {
     ) => {
       const created = (await panel<PanelProduct>('POST', '/products', body)).body;
 
-      for (const matrix of matrices) {
-        await panel('POST', `/products/${created.id}/variants`, {
-          colorIds: [colorId(matrix.color)],
-          sizeIds: [sizeId(matrix.size)],
-          defaultStock: matrix.stock,
-        });
+      if (matrices.length > 0) {
+        const tonos: Record<string, string> = { Negro: '#000000', Blanco: '#ffffff' };
+        const colores = [...new Set(matrices.map((matriz) => matriz.color))];
+        const tallas = [...new Set(matrices.map((matriz) => matriz.size))];
+
+        const ejes = (
+          await panel<{ name: string; values: { id: string; value: string }[] }[]>(
+            'PUT',
+            `/products/${created.id}/options`,
+            {
+              options: [
+                {
+                  name: 'Color',
+                  values: colores.map((color) => ({ value: color, hex: tonos[color] })),
+                },
+                { name: 'Talla', values: tallas.map((talla) => ({ value: talla })) },
+              ],
+            },
+          )
+        ).body;
+
+        const valorId = (eje: string, valor: string) =>
+          ejes.find((candidato) => candidato.name === eje)?.values.find((v) => v.value === valor)
+            ?.id ?? '';
+
+        // Una a una y no la matriz completa: este producto existe en negro M y
+        // en blanco S, pero no en negro S. Un catálogo real está lleno de esos
+        // huecos, y la vitrina tiene que contarlos bien.
+        for (const matriz of matrices) {
+          await panel('POST', `/products/${created.id}/variants/one`, {
+            optionValueIds: [valorId('Color', matriz.color), valorId('Talla', matriz.size)],
+            stock: matriz.stock,
+          });
+        }
       }
 
       products[key] = (await panel<PanelProduct>('GET', `/products/${created.id}`)).body;
@@ -86,15 +116,15 @@ describe('Tienda pública (e2e)', () => {
         featured: true,
       },
       [
-        { color: 'negro', size: 'M', stock: 5 },
-        { color: 'blanco', size: 'S', stock: 0 },
+        { color: 'Negro', size: 'M', stock: 5 },
+        { color: 'Blanco', size: 'S', stock: 0 },
       ],
     );
     await create('blouse', { name: 'Blusa Blanca', basePrice: 50000, status: 'ACTIVE' }, [
-      { color: 'blanco', size: 'M', stock: 3 },
+      { color: 'Blanco', size: 'M', stock: 3 },
     ]);
     await create('draft', { name: 'Borrador', basePrice: 70000 }, [
-      { color: 'negro', size: 'M', stock: 9 },
+      { color: 'Negro', size: 'M', stock: 9 },
     ]);
     await create(
       'skirt',
@@ -122,16 +152,30 @@ describe('Tienda pública (e2e)', () => {
       expect(slugs(body.products)).toEqual(['blusa-blanca', 'falda-escondida', 'vestido-negro']);
     });
 
-    it('color y talla se evalúan sobre la misma variante, y solo con stock', async () => {
-      expect(slugs((await pub<Page>('/products?colors=negro')).body.products)).toEqual([
+    it('los ejes se evalúan sobre la misma variante, y solo con stock', async () => {
+      expect(slugs((await pub<Page>('/products?options=Color%3ANegro')).body.products)).toEqual([
         'vestido-negro',
       ]);
       // El blanco del vestido está en cero: solo la blusa tiene blanco para vender.
-      expect(slugs((await pub<Page>('/products?colors=blanco')).body.products)).toEqual([
+      expect(slugs((await pub<Page>('/products?options=Color%3ABlanco')).body.products)).toEqual([
         'blusa-blanca',
       ]);
-      expect((await pub<Page>('/products?colors=blanco&sizes=s')).body.total).toBe(0);
-      expect((await pub<Page>('/products?sizes=m')).body.total).toBe(2);
+      expect(
+        (await pub<Page>('/products?options=Color%3ABlanco&options=Talla%3AS')).body.total,
+      ).toBe(0);
+      expect((await pub<Page>('/products?options=Talla%3AM')).body.total).toBe(2);
+    });
+
+    it('el filtro no distingue mayúsculas: la URL la teclea alguien', async () => {
+      expect(slugs((await pub<Page>('/products?options=color%3Anegro')).body.products)).toEqual([
+        'vestido-negro',
+      ]);
+    });
+
+    it('dos valores del mismo eje suman en vez de restringir', async () => {
+      const { body } = await pub<Page>('/products?options=Color%3ANegro&options=Color%3ABlanco');
+
+      expect(slugs(body.products)).toEqual(['blusa-blanca', 'vestido-negro']);
     });
 
     it('una categoría oculta o inexistente deja la lista vacía', async () => {
@@ -153,44 +197,49 @@ describe('Tienda pública (e2e)', () => {
       expect((await pub('/products?sort=barato')).status).toBe(400);
     });
 
-    it('la tarjeta resume colores y stock de las variantes activas', async () => {
+    it('la tarjeta resume los tonos y el stock de las variantes activas', async () => {
       const { body } = await pub<Page>('/products');
       const dress = body.products.find((card) => card.slug === 'vestido-negro');
       const skirt = body.products.find((card) => card.slug === 'falda-escondida');
 
-      expect(dress?.colors.map((color) => color.slug)).toEqual(['negro', 'blanco']);
+      expect(dress?.swatches.map((muestra) => muestra.value)).toEqual(['Negro', 'Blanco']);
       expect(dress?.inStock).toBe(true);
-      expect(skirt).toMatchObject({ inStock: false, colors: [] });
+      // Sin variantes no hay tonos que enseñar, y tampoco hay qué vender.
+      expect(skirt).toMatchObject({ inStock: false, swatches: [] });
     });
 
-    it('las facetas solo ofrecen lo visible', async () => {
+    it('las facetas salen de lo publicado, agrupadas por eje', async () => {
       const { body } = await pub<{
         categories: { slug: string }[];
-        colors: unknown[];
+        options: { name: string; values: { value: string }[] }[];
         priceRange: { min: number; max: number };
       }>('/facets');
 
       expect(body.categories.map((category) => category.slug)).toEqual(['vestidos']);
-      expect(body.colors).toHaveLength(3);
+      // Los ejes se agrupan por nombre entre productos distintos: el "Color" del
+      // vestido y el de la blusa son un solo filtro para quien navega.
+      expect(body.options.map((eje) => eje.name)).toEqual(['Color', 'Talla']);
+      expect(body.options[0]?.values.map((valor) => valor.value)).toEqual(['Negro', 'Blanco']);
       expect(body.priceRange).toEqual({ min: 50000, max: 100000 });
     });
   });
 
-  describe('ficha de prenda', () => {
+  describe('ficha de producto', () => {
     it('muestra variantes con su precio final', async () => {
       const { status, body } = await pub<{
         categorySlug: string | null;
-        variants: { price: number; stock: number }[];
-        colors: { slug: string }[];
-        sizes: { label: string }[];
+        variants: { price: number; stock: number; valueIds: string[] }[];
+        options: { name: string; values: { value: string }[] }[];
       }>('/products/vestido-negro');
 
       expect(status).toBe(200);
       expect(body.categorySlug).toBe('vestidos');
       expect(body.variants).toHaveLength(2);
       expect(body.variants.every((variant) => variant.price === 100000)).toBe(true);
-      expect(body.colors.map((color) => color.slug)).toEqual(['negro', 'blanco']);
-      expect(body.sizes.map((size) => size.label)).toEqual(['S', 'M']);
+      // Cada variante dice con qué valores se arma: es con lo que la ficha
+      // resuelve qué combinación eligió la clienta.
+      expect(body.variants.every((variant) => variant.valueIds.length === 2)).toBe(true);
+      expect(body.options.map((eje) => eje.name)).toEqual(['Color', 'Talla']);
     });
 
     it('un borrador responde 404', async () => {
@@ -213,7 +262,7 @@ describe('Tienda pública (e2e)', () => {
       const detail = await pub<{ variants: unknown[] }>('/products/blusa-blanca');
 
       expect(detail.body.variants).toEqual([]);
-      expect((await pub<Page>('/products?colors=blanco')).body.total).toBe(0);
+      expect((await pub<Page>('/products?options=Color%3ABlanco')).body.total).toBe(0);
 
       await api.call('PATCH', `/stores/${shop.storeId}/variants/${blouseVariant?.id}`, shop, {
         active: true,
@@ -330,7 +379,9 @@ describe('Tienda pública (e2e)', () => {
       api.call('POST', `/public/${storeSlug}/restock-requests`, undefined, { variantId, contact });
 
     it('queda guardado sobre una variante visible', async () => {
-      const soldOut = products.dress?.variants.find((variant) => variant.color.slug === 'blanco');
+      const soldOut = products.dress?.variants.find((variant) =>
+        variant.label.startsWith('Blanco'),
+      );
 
       expect((await restock(shop.slug, soldOut?.id, '3001234567')).status).toBe(204);
 

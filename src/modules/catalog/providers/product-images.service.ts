@@ -5,7 +5,7 @@ import { ProductImageDto } from '@shared/dtos/catalog/product.dto';
 import { imageObjectKeys, imageObjects, newStoragePath, processImage } from '@shared/media/images';
 import { Upload } from '@shared/media/upload';
 import { MediaStorage } from '@shared/storage/media-storage';
-import { assertColorInStore } from '@shared/tenancy/store-references';
+import { assertOptionValueInProduct } from '@shared/tenancy/store-references';
 import { blankToNull } from '@shared/utils/text';
 import { PrismaService } from '@db/prisma.service';
 
@@ -30,10 +30,10 @@ export class ProductImagesService {
    * comprobaciones; si el registro falla, se borran.
    */
   async upload(storeId: string, productId: string, upload: Upload): Promise<ProductImageDto> {
-    const colorId = upload.fields.colorId?.trim() || null;
+    const optionValueId = upload.fields.optionValueId?.trim() || null;
     const alt = blankToNull(upload.fields.alt?.trim());
 
-    if (colorId && !UUID.test(colorId)) {
+    if (optionValueId && !UUID.test(optionValueId)) {
       throw new BadRequestException('El color no es válido.');
     }
 
@@ -48,11 +48,11 @@ export class ProductImagesService {
         });
 
         if (!product) {
-          throw new NotFoundException('Esa prenda no existe.');
+          throw new NotFoundException('Ese producto no existe.');
         }
 
-        if (colorId) {
-          await assertColorInStore(tx, storeId, colorId);
+        if (optionValueId) {
+          await assertOptionValueInProduct(tx, storeId, productId, optionValueId);
         }
 
         await assertWithinPlan(tx, storeId, 'maxImagesPerProduct', product._count.images);
@@ -65,7 +65,7 @@ export class ProductImagesService {
           data: {
             storeId,
             productId,
-            colorId,
+            optionValueId,
             storagePath,
             urlFull: this.storage.publicUrl(`${storagePath}-full.webp`),
             urlCard: this.storage.publicUrl(`${storagePath}-card.webp`),
@@ -169,7 +169,7 @@ export class ProductImagesService {
 function toImageDto(image: ProductImage): ProductImageDto {
   return {
     id: image.id,
-    colorId: image.colorId,
+    optionValueId: image.optionValueId,
     storagePath: image.storagePath,
     urlFull: image.urlFull,
     urlCard: image.urlCard,

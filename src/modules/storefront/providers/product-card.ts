@@ -19,20 +19,51 @@ export const CARD_INCLUDE = {
     where: { active: true },
     select: {
       stock: true,
-      color: { select: { id: true, slug: true, name: true, hex: true, sortOrder: true } },
+      optionValues: {
+        select: {
+          value: {
+            select: {
+              value: true,
+              hex: true,
+              sortOrder: true,
+              option: { select: { name: true, sortOrder: true } },
+            },
+          },
+        },
+      },
     },
   },
 } satisfies Prisma.ProductInclude;
 
 export type ProductWithCard = Prisma.ProductGetPayload<{ include: typeof CARD_INCLUDE }>;
 
-type CardColor = ProductWithCard['variants'][number]['color'];
+/**
+ * Las muestras de color de la tarjeta.
+ *
+ * Se recogen de CUALQUIER eje cuyos valores traigan tono: la ropa lo llama
+ * "Color" pero una tienda de pintura puede llamarlo "Acabado", y la tarjeta no
+ * tiene por qué saber cómo se llama. Se deduplican por nombre del valor,
+ * porque dos "Rojo" de ejes distintos son el mismo punto para quien mira.
+ */
+interface Muestra {
+  value: string;
+  hex: string;
+  orden: number;
+}
 
 export function toProductCard(product: ProductWithCard): ProductCardDto {
-  const colors = new Map<string, CardColor>();
+  const muestras = new Map<string, Muestra>();
 
   for (const variant of product.variants) {
-    colors.set(variant.color.id, variant.color);
+    for (const { value } of variant.optionValues) {
+      if (value.hex === null || muestras.has(value.value)) continue;
+
+      muestras.set(value.value, {
+        value: value.value,
+        hex: value.hex,
+        orden: value.option.sortOrder * 1000 + value.sortOrder,
+      });
+    }
   }
 
   return {
@@ -47,14 +78,14 @@ export function toProductCard(product: ProductWithCard): ProductCardDto {
       lqip: image.lqip,
       alt: image.alt,
     })),
-    colors: [...colors.values()]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map(({ id, slug, name, hex }) => ({ id, slug, name, hex })),
+    swatches: [...muestras.values()]
+      .sort((uno, otro) => uno.orden - otro.orden || uno.value.localeCompare(otro.value))
+      .map(({ value, hex }) => ({ value, hex })),
     inStock: product.variants.some((variant) => variant.stock > 0),
   };
 }
 
-/** Desempate estable: sin él, dos prendas con el mismo precio pueden saltar de página. */
+/** Desempate estable: sin él, dos productos con el mismo precio pueden saltar de página. */
 export const NEWEST_FIRST: Prisma.ProductOrderByWithRelationInput[] = [
   { createdAt: 'desc' },
   { id: 'asc' },

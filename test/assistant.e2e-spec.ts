@@ -114,13 +114,13 @@ describe('Asistente de la tienda (e2e)', () => {
       const otra = await api.register('asistente-otra');
 
       await ponerPlan(otra, 'impulso');
-      await api.call('POST', `/stores/${otra.storeId}/sizes`, otra, { label: 'UNICA' });
+      await api.call('POST', `/stores/${otra.storeId}/categories`, otra, { name: 'Otra' });
 
-      const buscador = new DobleAsistente('buscar_prendas', { texto: 'vestido' });
+      const buscador = new DobleAsistente('buscar_productos', { texto: 'vestido' });
       const propia = await startTestApp({ assistant: buscador });
 
       try {
-        // Una prenda de la primera tienda, que la segunda no puede ver.
+        // Un producto de la primera tienda, que la segunda no puede ver.
         await propia.call('POST', `/stores/${shop.storeId}/products`, shop, {
           name: 'Vestido secreto',
           basePrice: 120000,

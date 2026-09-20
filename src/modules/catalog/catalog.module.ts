@@ -1,18 +1,16 @@
 import { Module } from '@nestjs/common';
 
 import { CategoriesController } from './controllers/categories.controller';
-import { ColorsController } from './controllers/colors.controller';
 import { InventoryController } from './controllers/inventory.controller';
 import { ProductImagesController } from './controllers/product-images.controller';
+import { ProductOptionsController } from './controllers/product-options.controller';
 import { ProductsController } from './controllers/products.controller';
-import { SizesController } from './controllers/sizes.controller';
 import { VariantsController } from './controllers/variants.controller';
 import { CategoriesService } from './providers/categories.service';
-import { ColorsService } from './providers/colors.service';
 import { InventoryService } from './providers/inventory.service';
 import { ProductImagesService } from './providers/product-images.service';
+import { ProductOptionsService } from './providers/product-options.service';
 import { ProductsService } from './providers/products.service';
-import { SizesService } from './providers/sizes.service';
 import { VariantsService } from './providers/variants.service';
 
 /**
@@ -29,19 +27,17 @@ import { VariantsService } from './providers/variants.service';
  */
 @Module({
   controllers: [
-    ColorsController,
-    SizesController,
     CategoriesController,
     ProductsController,
+    ProductOptionsController,
     VariantsController,
     InventoryController,
     ProductImagesController,
   ],
   providers: [
-    ColorsService,
-    SizesService,
     CategoriesService,
     ProductsService,
+    ProductOptionsService,
     VariantsService,
     InventoryService,
     ProductImagesService,
