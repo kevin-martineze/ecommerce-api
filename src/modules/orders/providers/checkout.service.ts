@@ -32,12 +32,16 @@ import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
 import { startOfMonthInBogota } from '@shared/utils/bogota-time';
 import { blankToNull } from '@shared/utils/text';
 import { isUniqueViolation, PrismaService, TenantClient } from '@db/prisma.service';
+import {
+  VARIANT_INCLUDE,
+  variantLabel,
+  variantValues,
+} from '@modules/catalog/providers/variant-mapping';
 
 import { isStorableOrderNumber, ITEMS_ORDER, toPublicOrder } from './order-mapping';
 
 const LINE_INCLUDE = {
-  color: { select: { name: true } },
-  size: { select: { label: true } },
+  ...VARIANT_INCLUDE,
   product: {
     select: {
       id: true,
@@ -70,8 +74,7 @@ interface PricedLine {
   productId: string;
   productName: string;
   productSlug: string;
-  colorName: string;
-  sizeLabel: string;
+  variantLabel: string;
   sku: string | null;
   unitPrice: number;
   qty: number;
@@ -331,8 +334,7 @@ export class CheckoutService {
           requested: line.qty,
           available: isSellable(variant) ? variant.stock : 0,
           product: variant?.product.name ?? 'Producto',
-          color: variant?.color.name ?? '',
-          size: variant?.size.label ?? '',
+          variantLabel: variant ? etiqueta(variant) : '',
         });
         continue;
       }
@@ -511,11 +513,18 @@ function isSellable(variant: VariantForLine | undefined): variant is VariantForL
   return variant !== undefined && variant.active && variant.product.status === 'ACTIVE';
 }
 
-function lineLabel(variant: VariantForLine): string {
-  return `${variant.product.name} — ${variant.color.name} / ${variant.size.label}`;
+/** Cómo se llama la variante hoy: "Rojo · M". Vacío si el producto no tiene ejes. */
+function etiqueta(variant: VariantForLine): string {
+  return variantLabel(variantValues(variant));
 }
 
-/** El precio sale siempre de la base: el de la variante si tiene, si no el de la prenda. */
+function lineLabel(variant: VariantForLine): string {
+  const propia = etiqueta(variant);
+
+  return propia ? `${variant.product.name} — ${propia}` : variant.product.name;
+}
+
+/** El precio sale siempre de la base: el de la variante si tiene, si no el del producto. */
 function priceLine(variant: VariantForLine, qty: number): PricedLine {
   const unitPrice = variant.priceOverride ?? variant.product.basePrice;
 
@@ -524,8 +533,7 @@ function priceLine(variant: VariantForLine, qty: number): PricedLine {
     productId: variant.product.id,
     productName: variant.product.name,
     productSlug: variant.product.slug,
-    colorName: variant.color.name,
-    sizeLabel: variant.size.label,
+    variantLabel: etiqueta(variant),
     sku: variant.sku,
     unitPrice,
     qty,

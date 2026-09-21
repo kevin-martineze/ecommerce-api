@@ -6,6 +6,11 @@ import {
 } from '@shared/dtos/commerce/commerce.dto';
 import { translatePrismaErrors } from '@shared/errors/translate-prisma-errors';
 import { PrismaService } from '@db/prisma.service';
+import {
+  VARIANT_INCLUDE,
+  variantLabel,
+  variantValues,
+} from '@modules/catalog/providers/variant-mapping';
 
 /** Mismo techo que el panel actual. */
 const LIST_LIMIT = 200;
@@ -15,8 +20,7 @@ const WITH_VARIANT = {
     select: {
       id: true,
       stock: true,
-      color: { select: { name: true } },
-      size: { select: { label: true } },
+      ...VARIANT_INCLUDE,
       product: { select: { name: true, slug: true } },
     },
   },
@@ -72,7 +76,6 @@ function toDto(request: RequestWithVariant): RestockRequestAdminDto {
     stock: request.variant.stock,
     productName: request.variant.product.name,
     productSlug: request.variant.product.slug,
-    colorName: request.variant.color.name,
-    sizeLabel: request.variant.size.label,
+    variantLabel: variantLabel(variantValues(request.variant)),
   };
 }

@@ -13,6 +13,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { ProductAttributeDto, ProductOptionDto } from '@shared/dtos/catalog/product-option.dto';
 import { VariantDto } from '@shared/dtos/catalog/variant.dto';
 import { Trim } from '@shared/dtos/transforms';
 import { SLUG_MAX_LENGTH } from '@shared/utils/slug';
@@ -24,13 +25,13 @@ export class CreateProductDto {
   @ApiProperty({ example: 'Vestido Lino Arena' })
   @Trim()
   @IsString()
-  @MinLength(2, { message: 'Ponle nombre a la prenda.' })
+  @MinLength(2, { message: 'Ponle nombre al producto.' })
   @MaxLength(120)
   name!: string;
 
   /**
    * Opcional: sin él se deriva del nombre y se numera si ya existe. Si viene y
-   * choca con otra prenda, es 409: quien lo escribió a mano quería ESE slug.
+   * choca con otro producto, es 409: quien lo escribió a mano quería ESE slug.
    *
    * El patrón es el mismo, laxo, del panel actual y no uno más estricto, para
    * no rechazar slugs que ya existen al migrar los datos.
@@ -49,20 +50,6 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(2000)
   description?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, example: '100% lino' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  @MaxLength(200)
-  material?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, example: 'Lavar a mano, en frío.' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  @MaxLength(400)
-  care?: string | null;
 
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   @IsOptional()
@@ -88,7 +75,7 @@ export class CreateProductDto {
 
   @ApiPropertyOptional({ enum: ProductStatus, default: ProductStatus.DRAFT })
   @IsOptional()
-  @IsEnum(ProductStatus, { message: 'Estado de prenda inválido.' })
+  @IsEnum(ProductStatus, { message: 'Estado de producto inválido.' })
   status?: ProductStatus;
 
   @ApiPropertyOptional({ default: false })
@@ -162,7 +149,7 @@ export class ProductImageDto {
   id!: string;
 
   @ApiProperty({ nullable: true })
-  colorId!: string | null;
+  optionValueId!: string | null;
 
   @ApiProperty()
   storagePath!: string;
@@ -200,12 +187,6 @@ export class ProductDetailDto {
   description!: string | null;
 
   @ApiProperty({ nullable: true })
-  material!: string | null;
-
-  @ApiProperty({ nullable: true })
-  care!: string | null;
-
-  @ApiProperty({ nullable: true })
   categoryId!: string | null;
 
   @ApiProperty()
@@ -229,7 +210,13 @@ export class ProductDetailDto {
   @ApiProperty({ type: [ProductImageDto], description: 'En su orden; la primera es la principal.' })
   images!: ProductImageDto[];
 
-  @ApiProperty({ type: [VariantDto], description: 'Ordenadas por color y talla.' })
+  @ApiProperty({ type: [ProductOptionDto], description: 'Los ejes por los que se divide.' })
+  options!: ProductOptionDto[];
+
+  @ApiProperty({ type: [ProductAttributeDto], description: 'Datos sueltos: Material, ISBN…' })
+  attributes!: ProductAttributeDto[];
+
+  @ApiProperty({ type: [VariantDto], description: 'Ordenadas por sus ejes.' })
   variants!: VariantDto[];
 }
 
@@ -237,7 +224,7 @@ export class DeleteProductResultDto {
   @ApiProperty({
     enum: ['deleted', 'archived'],
     description:
-      'archived: la prenda está en pedidos, así que se archivó para no perder el rastro.',
+      'archived: el producto está en pedidos, así que se archivó para no perder el rastro.',
   })
   result!: 'deleted' | 'archived';
 }

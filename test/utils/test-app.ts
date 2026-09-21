@@ -53,6 +53,19 @@ export interface TestFile {
   data: Buffer;
 }
 
+/** Un eje y sus valores, como los declara el panel. */
+export interface SeedOption {
+  name: string;
+  values: { value: string; hex?: string }[];
+}
+
+export interface SeededProduct {
+  id: string;
+  slug: string;
+  options: { id: string; name: string; values: { id: string; value: string }[] }[];
+  variants: { id: string; sku: string | null; stock: number; label: string }[];
+}
+
 export interface TestApp {
   call<T = unknown>(
     method: Method,
@@ -73,6 +86,18 @@ export interface TestApp {
   ): Promise<TestResponse<T>>;
   /** Registra una tienda con su dueña y devuelve la sesión recién emitida. */
   register(label: string, planCode?: string): Promise<Session>;
+  /**
+   * Un producto con sus ejes y sus variantes: el punto de partida de casi
+   * toda prueba.
+   *
+   * Sin ejes crea igual la variante única, que es como se vende un libro.
+   */
+  seedProduct(
+    session: Session,
+    product: { name: string; basePrice: number } & Record<string, unknown>,
+    options?: SeedOption[],
+    defaultStock?: number,
+  ): Promise<SeededProduct>;
   /** Directorio donde el driver local deja las fotos durante esta prueba. */
   mediaDir: string;
   /** Texto del último correo enviado a esa dirección, o null. */
@@ -234,6 +259,35 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
 
     lastMailTo(email: string): string | null {
       return mailer instanceof LogMailer ? (mailer.lastTo(email)?.text ?? null) : null;
+    },
+
+    async seedProduct(
+      session: Session,
+      product: { name: string; basePrice: number } & Record<string, unknown>,
+      options: SeedOption[] = [],
+      defaultStock = 10,
+    ): Promise<SeededProduct> {
+      const base = `/stores/${session.storeId}/products`;
+
+      const creado = await call<{ id: string; slug: string }>('POST', base, session, product);
+
+      if (creado.status !== 201) {
+        throw new Error(`No se pudo crear el producto de prueba (HTTP ${creado.status}).`);
+      }
+
+      if (options.length > 0) {
+        const ejes = await call('PUT', `${base}/${creado.body.id}/options`, session, { options });
+
+        if (ejes.status !== 200) {
+          throw new Error(`No se pudieron declarar los ejes (HTTP ${ejes.status}).`);
+        }
+      }
+
+      await call('POST', `${base}/${creado.body.id}/variants`, session, { defaultStock });
+
+      const detalle = await call<SeededProduct>('GET', `${base}/${creado.body.id}`, session);
+
+      return detalle.body;
     },
 
     async register(label: string, planCode?: string): Promise<Session> {

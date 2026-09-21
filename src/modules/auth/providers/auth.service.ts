@@ -29,14 +29,6 @@ import { TokenService } from './token.service';
 const MAX_FAILED_ATTEMPTS = 8;
 const LOCK_MINUTES = 15;
 
-/** Tallas y colores con los que arranca una tienda nueva. */
-const BASE_SIZES = ['XS', 'S', 'M', 'L', 'XL'];
-const BASE_COLORS = [
-  { slug: 'negro', name: 'Negro', hex: '#111111' },
-  { slug: 'blanco', name: 'Blanco', hex: '#FFFFFF' },
-  { slug: 'beige', name: 'Beige', hex: '#D9CBB8' },
-];
-
 /** Días de prueba antes del primer cobro. */
 const TRIAL_DAYS = 14;
 
@@ -312,20 +304,10 @@ export class AuthService {
       },
     });
 
-    // Una tienda sin tallas ni colores no puede crear ni un producto. Se
-    // siembra lo mínimo para que el panel sea usable desde el primer minuto;
-    // todo es editable después.
-    await tx.size.createMany({
-      data: BASE_SIZES.map((label, index) => ({ storeId: store.id, label, sortOrder: index })),
-    });
-
-    await tx.color.createMany({
-      data: BASE_COLORS.map((color, index) => ({
-        storeId: store.id,
-        ...color,
-        sortOrder: index,
-      })),
-    });
+    // Ya no se siembran tallas ni colores: los ejes de cada producto los
+    // declara ese producto, y sembrar "S, M, L" en la tienda de una librería
+    // sería estorbo. Lo que el rubro sugiera se resuelve en el onboarding, no
+    // creando filas que quizá nadie use.
 
     return store;
   }

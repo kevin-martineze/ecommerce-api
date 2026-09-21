@@ -5,8 +5,7 @@ import { OrderAdminDto, OrderItemAdminDto } from '@shared/dtos/orders/order-admi
 /** Las líneas de un pedido no tienen fecha propia: se muestran en un orden estable y legible. */
 export const ITEMS_ORDER: Prisma.OrderItemOrderByWithRelationInput[] = [
   { productName: 'asc' },
-  { colorName: 'asc' },
-  { sizeLabel: 'asc' },
+  { variantLabel: 'asc' },
 ];
 
 export function toOrderAdmin(order: Order): OrderAdminDto {
@@ -43,8 +42,7 @@ export function toOrderItemAdmin(item: OrderItem): OrderItemAdminDto {
     productId: item.productId,
     productName: item.productName,
     productSlug: item.productSlug,
-    colorName: item.colorName,
-    sizeLabel: item.sizeLabel,
+    variantLabel: item.variantLabel,
     sku: item.sku,
     unitPrice: item.unitPrice,
     qty: item.qty,
@@ -77,8 +75,7 @@ export function toPublicOrder(order: Order & { items: OrderItem[] }): PublicOrde
       id: item.id,
       productName: item.productName,
       productSlug: item.productSlug,
-      colorName: item.colorName,
-      sizeLabel: item.sizeLabel,
+      variantLabel: item.variantLabel,
       sku: item.sku,
       unitPrice: item.unitPrice,
       qty: item.qty,

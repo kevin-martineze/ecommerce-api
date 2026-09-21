@@ -16,13 +16,13 @@ import { blankToNull } from '@shared/utils/text';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
 import { ProductImagesService } from './product-images.service';
-import { toVariantDto, VARIANT_INCLUDE } from './variant-mapping';
+import { compareVariants, toVariantDto, VARIANT_INCLUDE } from './variant-mapping';
 
 /** Mismo techo que el panel actual. Una tienda de ropa pequeña no se acerca. */
 const LIST_LIMIT = 200;
 
-const NOT_FOUND = 'Esa prenda no existe.';
-const SLUG_TAKEN = 'Ya existe una prenda con ese slug.';
+const NOT_FOUND = 'Ese producto no existe.';
+const SLUG_TAKEN = 'Ya existe un producto con ese slug.';
 
 const LIST_INCLUDE = {
   category: { select: { id: true, name: true } },
@@ -32,9 +32,16 @@ const LIST_INCLUDE = {
 
 const DETAIL_INCLUDE = {
   images: { orderBy: { sortOrder: 'asc' } },
+  options: {
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    include: { values: { orderBy: [{ sortOrder: 'asc' }, { value: 'asc' }] } },
+  },
+  attributes: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] },
   variants: {
     include: VARIANT_INCLUDE,
-    orderBy: [{ color: { sortOrder: 'asc' } }, { size: { sortOrder: 'asc' } }],
+    // El orden de verdad lo pone `compareVariants` al mapear: depende del
+    // orden de los ejes, que Postgres no puede alcanzar desde la variante.
+    orderBy: [{ sku: 'asc' }],
   },
 } satisfies Prisma.ProductInclude;
 
@@ -122,8 +129,6 @@ export class ProductsService {
             slug,
             name: dto.name,
             description: blankToNull(dto.description) ?? null,
-            material: blankToNull(dto.material) ?? null,
-            care: blankToNull(dto.care) ?? null,
             categoryId: dto.categoryId ?? null,
             basePrice: dto.basePrice,
             compareAtPrice,
@@ -174,8 +179,6 @@ export class ProductsService {
             name: dto.name ?? undefined,
             slug: dto.slug ?? undefined,
             description: blankToNull(dto.description),
-            material: blankToNull(dto.material),
-            care: blankToNull(dto.care),
             categoryId: dto.categoryId,
             basePrice,
             compareAtPrice,
@@ -267,8 +270,6 @@ function toDetailDto(product: ProductWithDetail): ProductDetailDto {
     slug: product.slug,
     name: product.name,
     description: product.description,
-    material: product.material,
-    care: product.care,
     categoryId: product.categoryId,
     basePrice: product.basePrice,
     compareAtPrice: product.compareAtPrice,
@@ -276,9 +277,26 @@ function toDetailDto(product: ProductWithDetail): ProductDetailDto {
     featured: product.featured,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
+    options: product.options.map((option) => ({
+      id: option.id,
+      name: option.name,
+      sortOrder: option.sortOrder,
+      values: option.values.map((value) => ({
+        id: value.id,
+        value: value.value,
+        hex: value.hex,
+        sortOrder: value.sortOrder,
+      })),
+    })),
+    attributes: product.attributes.map((attribute) => ({
+      id: attribute.id,
+      name: attribute.name,
+      value: attribute.value,
+      sortOrder: attribute.sortOrder,
+    })),
     images: product.images.map((image) => ({
       id: image.id,
-      colorId: image.colorId,
+      optionValueId: image.optionValueId,
       storagePath: image.storagePath,
       urlFull: image.urlFull,
       urlCard: image.urlCard,
@@ -287,6 +305,6 @@ function toDetailDto(product: ProductWithDetail): ProductDetailDto {
       alt: image.alt,
       sortOrder: image.sortOrder,
     })),
-    variants: product.variants.map(toVariantDto),
+    variants: [...product.variants].sort(compareVariants).map(toVariantDto),
   };
 }

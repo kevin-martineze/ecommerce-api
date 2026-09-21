@@ -21,7 +21,15 @@ describe('slugify', () => {
 describe('buildSku', () => {
   it('usa los 10 primeros caracteres del producto sin guiones', () => {
     expect(skuBase('vestido-negro-largo')).toBe('VESTIDONEG');
-    expect(buildSku('vestido-negro-largo', 'negro', 'm')).toBe('VESTIDONEG-NEGRO-M');
+    expect(buildSku('vestido-negro-largo', ['Negro', 'M'])).toBe('VESTIDONEG-NEGRO-M');
+  });
+
+  it('un producto sin ejes se queda con la base', () => {
+    expect(buildSku('libro-cien-anos', [])).toBe('LIBROCIENA');
+  });
+
+  it('limpia acentos y espacios: un SKU se teclea y se dicta', () => {
+    expect(buildSku('cafe-huila', ['Molienda fina', '500 g'])).toBe('CAFEHUILA-MOLIENDAFINA-500G');
   });
 });
 

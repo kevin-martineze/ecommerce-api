@@ -167,11 +167,13 @@ describe('Cuenta y equipo (e2e)', () => {
 
       api.forgetStore(newStoreId);
 
-      const sizes = await api.call<unknown[]>('GET', `/stores/${newStoreId}/sizes`, {
+      const sizes = await api.call<unknown[]>('GET', `/stores/${newStoreId}/categories`, {
         token: created.body.accessToken,
       });
 
-      expect(sizes.body.length).toBeGreaterThan(0);
+      // Una tienda nueva ya no nace con ejes sembrados: los declara cada
+      // producto. Lo que importa es que el panel de la tienda nueva responda.
+      expect(sizes.status).toBe(200);
 
       // El refresh token de otra cuenta no sirve para cambiar de tienda.
       const stranger = await api.register('account-stranger');

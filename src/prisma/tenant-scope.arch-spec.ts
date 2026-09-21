@@ -141,7 +141,14 @@ describe('Aislamiento por tienda: toda consulta a Prisma nombra storeId', () => 
     // Si el parseo del schema se rompiera, el conjunto quedaría vacío y el test
     // de más abajo pasaría sin revisar nada. Esto lo impide.
     expect([...delegates]).toEqual(
-      expect.arrayContaining(['product', 'variant', 'color', 'order', 'storeSettings']),
+      expect.arrayContaining([
+        'product',
+        'variant',
+        'productOptionValue',
+        'variantOptionValue',
+        'order',
+        'storeSettings',
+      ]),
     );
     expect(delegates.has('refreshToken')).toBe(false);
     expect(delegates.has('user')).toBe(false);

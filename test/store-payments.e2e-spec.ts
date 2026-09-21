@@ -91,25 +91,12 @@ describe('Pagos de la tienda (e2e)', () => {
       cost: 8000,
     });
 
-    const producto = await panel<{ id: string }>('POST', '/products', {
-      name: 'Blusa de prueba',
-      basePrice: 90000,
-      status: 'ACTIVE',
-    });
-
-    // Toda tienda nace con colores y tallas: se usan los que ya tiene.
-    const colores = (await panel<{ id: string; slug: string }[]>('GET', '/colors')).body;
-    const tallas = (await panel<{ id: string; label: string }[]>('GET', '/sizes')).body;
-
-    await panel('POST', `/products/${producto.body.id}/variants`, {
-      colorIds: colores.slice(0, 1).map((color) => color.id),
-      sizeIds: tallas.filter((talla) => talla.label === 'M').map((talla) => talla.id),
-      defaultStock: 5,
-    });
-
-    const detalle = (
-      await panel<{ variants: { id: string }[] }>('GET', `/products/${producto.body.id}`)
-    ).body;
+    const detalle = await api.seedProduct(
+      shop,
+      { name: 'Blusa de prueba', basePrice: 90000, status: 'ACTIVE' },
+      [{ name: 'Talla', values: [{ value: 'M' }] }],
+      5,
+    );
 
     zonaId = zona.body.id;
     variantId = detalle.variants[0]?.id ?? '';

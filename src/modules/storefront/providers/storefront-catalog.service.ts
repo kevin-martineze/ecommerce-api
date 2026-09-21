@@ -11,6 +11,7 @@ import {
 } from '@shared/dtos/storefront/product.dto';
 import { PrismaService } from '@db/prisma.service';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
+import { compareVariants } from '@modules/catalog/providers/variant-mapping';
 
 import { CARD_INCLUDE, NEWEST_FIRST, toProductCard } from './product-card';
 
@@ -23,12 +24,12 @@ const SORT_ORDER: Record<ProductSort, Prisma.ProductOrderByWithRelationInput[]> 
   name: [{ name: 'asc' }, { id: 'asc' }],
 };
 
-const PRODUCT_GONE = 'Esta prenda ya no está disponible.';
+const PRODUCT_GONE = 'Este producto ya no está disponible.';
 
 /**
  * Catálogo que ve la visitante.
  *
- * Toda consulta de prendas lleva `status: 'ACTIVE'`. Es la regla que en la
+ * Toda consulta de productos lleva `status: 'ACTIVE'`. Es la regla que en la
  * versión con Supabase ponía la política `products_read`; acá la pone el
  * servicio, porque RLS en esta API aísla tiendas, no estados.
  */
@@ -77,16 +78,18 @@ export class StorefrontCatalogService {
         select: { id: true, slug: true, name: true, parentId: true, sortOrder: true },
       });
 
-      const colors = await tx.color.findMany({
-        where: { storeId: store.id, active: true },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        select: { id: true, slug: true, name: true, hex: true, sortOrder: true },
-      });
-
-      const sizes = await tx.size.findMany({
-        where: { storeId: store.id, active: true },
-        orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
-        select: { id: true, label: true, sortOrder: true },
+      // Los ejes se agrupan por NOMBRE entre todos los productos publicados:
+      // el "Color" de una camisa y el de otra son el mismo filtro para quien
+      // navega, aunque en la base sean filas distintas. Un eje que no use
+      // ningún producto publicado no aparece.
+      const valores = await tx.productOptionValue.findMany({
+        where: { storeId: store.id, option: { product: { status: 'ACTIVE' } } },
+        select: {
+          value: true,
+          hex: true,
+          sortOrder: true,
+          option: { select: { name: true, sortOrder: true } },
+        },
       });
 
       const prices = await tx.product.aggregate({
@@ -97,8 +100,7 @@ export class StorefrontCatalogService {
 
       return {
         categories,
-        colors,
-        sizes,
+        options: agruparFacetas(valores),
         priceRange: { min: prices._min.basePrice ?? 0, max: prices._max.basePrice ?? 0 },
       };
     });
@@ -113,10 +115,19 @@ export class StorefrontCatalogService {
         include: {
           category: { select: { name: true, slug: true, active: true } },
           images: { orderBy: { sortOrder: 'asc' } },
+          attributes: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] },
           variants: {
             where: { active: true },
-            include: { color: true, size: true },
-            orderBy: [{ color: { sortOrder: 'asc' } }, { size: { sortOrder: 'asc' } }],
+            include: {
+              optionValues: {
+                include: {
+                  value: {
+                    include: { option: { select: { id: true, name: true, sortOrder: true } } },
+                  },
+                },
+              },
+            },
+            orderBy: [{ sku: 'asc' }],
           },
         },
       });
@@ -125,14 +136,37 @@ export class StorefrontCatalogService {
         throw new NotFoundException(PRODUCT_GONE);
       }
 
-      // Colores y tallas salen de las variantes, no del catálogo: la ficha
-      // ofrece solo lo que de verdad existe para esta prenda.
-      const colors = new Map<string, (typeof product.variants)[number]['color']>();
-      const sizes = new Map<string, (typeof product.variants)[number]['size']>();
+      // Los ejes salen de las variantes ACTIVAS y no de los ejes declarados:
+      // la ficha ofrece solo lo que de verdad se puede elegir. Un color cuyas
+      // variantes se desactivaron todas no se pinta para luego no existir.
+      const ejes = new Map<
+        string,
+        {
+          id: string;
+          name: string;
+          sortOrder: number;
+          values: Map<string, { id: string; value: string; hex: string | null; sortOrder: number }>;
+        }
+      >();
 
       for (const variant of product.variants) {
-        colors.set(variant.color.id, variant.color);
-        sizes.set(variant.size.id, variant.size);
+        for (const { value } of variant.optionValues) {
+          const eje = ejes.get(value.option.id) ?? {
+            id: value.option.id,
+            name: value.option.name,
+            sortOrder: value.option.sortOrder,
+            values: new Map(),
+          };
+
+          eje.values.set(value.id, {
+            id: value.id,
+            value: value.value,
+            hex: value.hex,
+            sortOrder: value.sortOrder,
+          });
+
+          ejes.set(value.option.id, eje);
+        }
       }
 
       // Una categoría oculta no se nombra: enlazaría a un listado vacío.
@@ -143,15 +177,13 @@ export class StorefrontCatalogService {
         slug: product.slug,
         name: product.name,
         description: product.description,
-        material: product.material,
-        care: product.care,
         basePrice: product.basePrice,
         compareAtPrice: product.compareAtPrice,
         categoryName: category?.name ?? null,
         categorySlug: category?.slug ?? null,
         images: product.images.map((image) => ({
           id: image.id,
-          colorId: image.colorId,
+          optionValueId: image.optionValueId,
           urlFull: image.urlFull,
           urlCard: image.urlCard,
           urlThumb: image.urlThumb,
@@ -159,16 +191,20 @@ export class StorefrontCatalogService {
           alt: image.alt,
           sortOrder: image.sortOrder,
         })),
-        colors: [...colors.values()]
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map(({ id, slug, name, hex, sortOrder }) => ({ id, slug, name, hex, sortOrder })),
-        sizes: [...sizes.values()]
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map(({ id, label, sortOrder }) => ({ id, label, sortOrder })),
-        variants: product.variants.map((variant) => ({
+        options: [...ejes.values()]
+          .sort((uno, otro) => uno.sortOrder - otro.sortOrder || uno.name.localeCompare(otro.name))
+          .map((eje) => ({
+            id: eje.id,
+            name: eje.name,
+            sortOrder: eje.sortOrder,
+            values: [...eje.values.values()].sort(
+              (uno, otro) => uno.sortOrder - otro.sortOrder || uno.value.localeCompare(otro.value),
+            ),
+          })),
+        attributes: product.attributes.map(({ name, value }) => ({ name, value })),
+        variants: [...product.variants].sort(compareVariants).map((variant) => ({
           id: variant.id,
-          colorId: variant.colorId,
-          sizeId: variant.sizeId,
+          valueIds: variant.optionValues.map((enlace) => enlace.optionValueId),
           sku: variant.sku,
           stock: variant.stock,
           price: variant.priceOverride ?? product.basePrice,
@@ -177,7 +213,7 @@ export class StorefrontCatalogService {
     });
   }
 
-  /** Otras prendas de la misma categoría; si no tiene una visible, cualquiera publicada. */
+  /** Otros productos de la misma categoría; si no tiene una visible, cualquiera publicada. */
   async related(storeSlug: string, productSlug: string): Promise<ProductCardDto[]> {
     const store = await this.stores.resolve(storeSlug);
 
@@ -238,9 +274,33 @@ export class StorefrontCatalogService {
  * Filtros del listado, sin `storeId` ni estado: esos los pone la consulta, a la
  * vista, para que el test de arquitectura los encuentre.
  */
+/**
+ * Agrupa `Eje:Valor` por eje.
+ *
+ * Varios valores del mismo eje suman (rojo o azul); ejes distintos restringen
+ * (rojo Y talla M). Es lo que espera cualquiera que haya usado una tienda.
+ */
+function porEje(options: readonly string[]): Map<string, string[]> {
+  const grupos = new Map<string, string[]>();
+
+  for (const entrada of options) {
+    const corte = entrada.indexOf(':');
+
+    if (corte < 1) continue;
+
+    const eje = entrada.slice(0, corte).trim();
+    const valor = entrada.slice(corte + 1).trim();
+
+    if (!eje || !valor) continue;
+
+    grupos.set(eje, [...(grupos.get(eje) ?? []), valor]);
+  }
+
+  return grupos;
+}
+
 function searchFilters(query: ProductSearchQueryDto): Prisma.ProductWhereInput {
-  const colors = query.colors ?? [];
-  const sizes = (query.sizes ?? []).map((size) => size.toUpperCase());
+  const ejes = porEje(query.options ?? []);
   const hasPriceRange = query.minPrice !== undefined || query.maxPrice !== undefined;
 
   return {
@@ -249,20 +309,88 @@ function searchFilters(query: ProductSearchQueryDto): Prisma.ProductWhereInput {
     // Una categoría oculta o inexistente deja la lista vacía en vez de ignorar
     // el filtro, igual que la tienda actual.
     ...(query.category ? { category: { is: { slug: query.category, active: true } } } : {}),
-    // Color y talla se evalúan sobre LA MISMA variante y con stock: "hay M
+    // Todos los ejes se evalúan sobre LA MISMA variante y con stock: "hay M
     // negra", no "hay algo negro y algo en M". Así el conteo de páginas
     // coincide con lo que de verdad se puede comprar.
-    ...(colors.length > 0 || sizes.length > 0
+    //
+    // La comparación ignora mayúsculas porque el valor viene de una URL que
+    // alguien pudo teclear o compartir en minúsculas.
+    ...(ejes.size > 0
       ? {
           variants: {
             some: {
               active: true,
               stock: { gt: 0 },
-              ...(colors.length > 0 ? { color: { is: { slug: { in: colors } } } } : {}),
-              ...(sizes.length > 0 ? { size: { is: { label: { in: sizes } } } } : {}),
+              AND: [...ejes].map(([eje, valores]) => ({
+                optionValues: {
+                  some: {
+                    value: {
+                      is: {
+                        option: {
+                          is: { name: { equals: eje, mode: Prisma.QueryMode.insensitive } },
+                        },
+                        OR: valores.map((valor) => ({
+                          value: { equals: valor, mode: Prisma.QueryMode.insensitive },
+                        })),
+                      },
+                    },
+                  },
+                },
+              })),
             },
           },
         }
       : {}),
   };
+}
+
+/** Agrupa por nombre de eje los valores de todos los productos publicados. */
+function agruparFacetas(
+  valores: readonly {
+    value: string;
+    hex: string | null;
+    sortOrder: number;
+    option: { name: string; sortOrder: number };
+  }[],
+): CatalogFacetsDto['options'] {
+  const ejes = new Map<
+    string,
+    {
+      name: string;
+      sortOrder: number;
+      values: Map<string, { value: string; hex: string | null; sortOrder: number }>;
+    }
+  >();
+
+  for (const valor of valores) {
+    const eje = ejes.get(valor.option.name) ?? {
+      name: valor.option.name,
+      sortOrder: valor.option.sortOrder,
+      values: new Map(),
+    };
+
+    // Gana el orden más bajo: si una camisa pone "Color" primero y otra
+    // tercero, el filtro sale donde la mayoría espera encontrarlo.
+    eje.sortOrder = Math.min(eje.sortOrder, valor.option.sortOrder);
+
+    if (!eje.values.has(valor.value)) {
+      eje.values.set(valor.value, {
+        value: valor.value,
+        hex: valor.hex,
+        sortOrder: valor.sortOrder,
+      });
+    }
+
+    ejes.set(valor.option.name, eje);
+  }
+
+  return [...ejes.values()]
+    .sort((uno, otro) => uno.sortOrder - otro.sortOrder || uno.name.localeCompare(otro.name))
+    .map((eje) => ({
+      name: eje.name,
+      sortOrder: eje.sortOrder,
+      values: [...eje.values.values()].sort(
+        (uno, otro) => uno.sortOrder - otro.sortOrder || uno.value.localeCompare(otro.value),
+      ),
+    }));
 }

@@ -1,5 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  CreateVariantDto,
   DeleteVariantResultDto,
   GenerateVariantsDto,
   GenerateVariantsResultDto,
@@ -7,23 +10,42 @@ import {
   VariantDto,
 } from '@shared/dtos/catalog/variant.dto';
 import { translatePrismaErrors } from '@shared/errors/translate-prisma-errors';
-import { findColorsAndSizesInStore } from '@shared/tenancy/store-references';
 import { buildSku, firstAvailable, skuBase } from '@shared/utils/slug';
 import { PrismaService } from '@db/prisma.service';
 
-import { toVariantDto, VARIANT_INCLUDE } from './variant-mapping';
+import { optionsKey, toVariantDto, VARIANT_INCLUDE } from './variant-mapping';
 
 const NOT_FOUND = 'Esa variante no existe.';
+const PRODUCTO_NO_EXISTE = 'Ese producto no existe.';
+
+/**
+ * Techo de combinaciones por producto.
+ *
+ * Tres ejes de cincuenta valores dan ciento veinticinco mil filas: nadie
+ * gestiona eso, pero un clic distraído lo crea. El tope convierte un accidente
+ * en un mensaje.
+ */
+const MAX_VARIANTES = 200;
+
+/** Una combinación por armar: qué valores la forman y cómo se llama. */
+interface Combinacion {
+  valueIds: string[];
+  etiquetas: string[];
+}
 
 @Injectable()
 export class VariantsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Crea las combinaciones color × talla que le falten a la prenda.
+   * Crea las combinaciones que le falten al producto.
+   *
+   * Qué combinar no viene en la petición: sale de los ejes que el producto ya
+   * declaró. Un producto SIN ejes tiene igual su variante única, con la huella
+   * vacía, para que el stock viva siempre en el mismo sitio.
    *
    * Nunca borra: una variante existente puede estar dentro de un pedido. Pedir
-   * la misma matriz dos veces crea cero la segunda.
+   * lo mismo dos veces crea cero la segunda.
    */
   generate(
     storeId: string,
@@ -33,63 +55,164 @@ export class VariantsService {
     return this.prisma.forStore(storeId, async (tx) => {
       const product = await tx.product.findFirst({
         where: { id: productId, storeId },
-        select: { slug: true, variants: { select: { colorId: true, sizeId: true } } },
+        select: {
+          slug: true,
+          options: {
+            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+            select: {
+              values: {
+                orderBy: [{ sortOrder: 'asc' }, { value: 'asc' }],
+                select: { id: true, value: true },
+              },
+            },
+          },
+          variants: { select: { optionsKey: true } },
+        },
       });
 
       if (!product) {
-        throw new NotFoundException('Esa prenda no existe.');
+        throw new NotFoundException(PRODUCTO_NO_EXISTE);
       }
 
-      const { colors, sizes } = await findColorsAndSizesInStore(
-        tx,
-        storeId,
-        dto.colorIds,
-        dto.sizeIds,
+      const combinaciones = combinar(product.options);
+
+      if (combinaciones.length > MAX_VARIANTES) {
+        throw new BadRequestException(
+          `Esos ejes dan ${combinaciones.length} combinaciones y el tope es ${MAX_VARIANTES}. Quita valores o divide el producto.`,
+        );
+      }
+
+      const existentes = new Set(product.variants.map((variante) => variante.optionsKey));
+      const faltantes = combinaciones.filter(
+        (combinacion) => !existentes.has(optionsKey(combinacion.valueIds)),
       );
 
-      const existing = new Set(product.variants.map((v) => `${v.colorId}:${v.sizeId}`));
-
-      const missing = colors.flatMap((color) =>
-        sizes
-          .filter((size) => !existing.has(`${color.id}:${size.id}`))
-          .map((size) => ({ color, size })),
-      );
-
-      if (missing.length === 0) {
+      if (faltantes.length === 0) {
         return { created: 0 };
       }
 
-      // El SKU se corta a 10 caracteres del producto, así que dos prendas que
+      // El SKU se corta a 10 caracteres del producto, así que dos productos que
       // empiezan igual ("vestido-negro-largo", "vestido-negro-corto") generan el
-      // mismo. En el panel actual eso tumbaba la matriz entera con un error
-      // genérico; acá el repetido se numera, como los slugs.
-      const takenSkus = await tx.variant.findMany({
-        where: { storeId, sku: { startsWith: `${skuBase(product.slug)}-` } },
+      // mismo. El repetido se numera, como los slugs.
+      const usados = await tx.variant.findMany({
+        where: { storeId, sku: { startsWith: skuBase(product.slug) } },
         select: { sku: true },
       });
 
-      const taken = new Set(takenSkus.flatMap((row) => (row.sku ? [row.sku] : [])));
+      const tomados = new Set(usados.flatMap((fila) => (fila.sku ? [fila.sku] : [])));
 
-      const { count } = await tx.variant.createMany({
-        data: missing.map(({ color, size }) => {
-          const sku = firstAvailable(buildSku(product.slug, color.slug, size.label), taken);
+      const nuevas = faltantes.map((combinacion) => {
+        const sku = firstAvailable(buildSku(product.slug, combinacion.etiquetas), tomados);
 
-          taken.add(sku);
+        tomados.add(sku);
 
-          return {
-            // El trigger `variants_store_id` lo reescribe con el de la prenda
-            // de todos modos; Prisma lo exige porque la columna no tiene default.
-            storeId,
-            productId,
-            colorId: color.id,
-            sizeId: size.id,
-            sku,
-            stock: dto.defaultStock ?? 0,
-          };
-        }),
+        return { id: randomUUID(), sku, combinacion };
       });
 
-      return { created: count };
+      await tx.variant.createMany({
+        data: nuevas.map(({ id, sku, combinacion }) => ({
+          id,
+          // El trigger `variants_store_id` lo reescribe con el del producto de
+          // todos modos; Prisma lo exige porque la columna no tiene default.
+          storeId,
+          productId,
+          optionsKey: optionsKey(combinacion.valueIds),
+          sku,
+          stock: dto.defaultStock ?? 0,
+        })),
+      });
+
+      await tx.variantOptionValue.createMany({
+        data: nuevas.flatMap(({ id, combinacion }) =>
+          combinacion.valueIds.map((optionValueId) => ({
+            storeId,
+            variantId: id,
+            optionValueId,
+          })),
+        ),
+      });
+
+      return { created: nuevas.length };
+    });
+  }
+
+  /**
+   * Crea UNA combinación concreta.
+   *
+   * Sirve para lo que `generate` no cubre: la talla suelta que solo existe en
+   * un color. Los valores tienen que ser del propio producto —si no, una
+   * tienda podría colgarle a su variante el valor de otra— y no puede repetir
+   * una combinación que ya existe.
+   */
+  create(storeId: string, productId: string, dto: CreateVariantDto): Promise<VariantDto> {
+    return this.prisma.forStore(storeId, async (tx) => {
+      const product = await tx.product.findFirst({
+        where: { id: productId, storeId },
+        select: {
+          slug: true,
+          options: { select: { id: true } },
+        },
+      });
+
+      if (!product) {
+        throw new NotFoundException(PRODUCTO_NO_EXISTE);
+      }
+
+      const valores = await tx.productOptionValue.findMany({
+        where: { id: { in: dto.optionValueIds }, storeId, option: { productId } },
+        select: { id: true, value: true, optionId: true },
+      });
+
+      if (valores.length !== dto.optionValueIds.length) {
+        throw new BadRequestException('Alguno de esos valores no es de este producto.');
+      }
+
+      // Un valor por eje, ni dos del mismo ni ninguno: si no, "Rojo · Azul · M"
+      // sería una variante válida y no significa nada.
+      const ejesCubiertos = new Set(valores.map((valor) => valor.optionId));
+
+      if (ejesCubiertos.size !== valores.length || ejesCubiertos.size !== product.options.length) {
+        throw new BadRequestException('Hay que elegir exactamente un valor por cada eje.');
+      }
+
+      const huella = optionsKey(dto.optionValueIds);
+
+      const repetida = await tx.variant.findFirst({
+        where: { productId, storeId, optionsKey: huella },
+        select: { id: true },
+      });
+
+      if (repetida) {
+        throw new BadRequestException('Esa combinación ya existe.');
+      }
+
+      const usados = await tx.variant.findMany({
+        where: { storeId, sku: { startsWith: skuBase(product.slug) } },
+        select: { sku: true },
+      });
+
+      const etiquetas = valores.map((valor) => valor.value);
+      const sku = firstAvailable(
+        buildSku(product.slug, etiquetas),
+        new Set(usados.flatMap((fila) => (fila.sku ? [fila.sku] : []))),
+      );
+
+      const variante = await tx.variant.create({
+        data: {
+          storeId,
+          productId,
+          optionsKey: huella,
+          sku,
+          stock: dto.stock ?? 0,
+          priceOverride: dto.priceOverride ?? null,
+          optionValues: {
+            create: dto.optionValueIds.map((optionValueId) => ({ storeId, optionValueId })),
+          },
+        },
+        include: VARIANT_INCLUDE,
+      });
+
+      return toVariantDto(variante);
     });
   }
 
@@ -145,4 +268,27 @@ export class VariantsService {
       return { result: 'deleted' };
     });
   }
+}
+
+/**
+ * El producto cartesiano de los ejes.
+ *
+ * Sin ejes devuelve UNA combinación vacía, no cero: ese es el caso del libro
+ * o la vela, que tienen una sola variante y por tanto un solo stock.
+ */
+function combinar(
+  options: readonly { values: readonly { id: string; value: string }[] }[],
+): Combinacion[] {
+  return options
+    .filter((eje) => eje.values.length > 0)
+    .reduce<Combinacion[]>(
+      (acumulado, eje) =>
+        acumulado.flatMap((parcial) =>
+          eje.values.map((valor) => ({
+            valueIds: [...parcial.valueIds, valor.id],
+            etiquetas: [...parcial.etiquetas, valor.value],
+          })),
+        ),
+      [{ valueIds: [], etiquetas: [] }],
+    );
 }

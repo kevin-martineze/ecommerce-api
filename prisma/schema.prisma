@@ -1,13 +1,15 @@
 // ===========================================================================
-// Plataforma de tiendas de ropa — modelo de datos.
+// Plataforma de tiendas — modelo de datos.
 //
 // Reglas que sostienen todo lo demás:
 //
 //  1. TODO dato de negocio cuelga de una Store. No existe fila "global" que un
-//     inquilino pueda ver por accidente. Esto incluye colores, tallas y
-//     categorías, que en la versión de tienda única eran tablas compartidas:
-//     dos tiendas distintas nombran y ordenan sus tallas distinto, y una lista
-//     común obligaría a una de las dos a ceder.
+//     inquilino pueda ver por accidente.
+//
+//     Las opciones de un producto —talla, color, molienda, formato— van un paso
+//     más allá y cuelgan del PRODUCTO, no de la tienda. Con listas por tienda,
+//     toda tienda quedaba atada a los mismos dos ejes, y vender un libro exigía
+//     inventarle una talla. Cada producto declara los suyos.
 //
 //  2. Cada tabla con `storeId` lleva RLS encima, comparando contra
 //     `current_setting('app.store_id')`. La aplicación se conecta con un rol
@@ -59,7 +61,7 @@ enum StoreStatus {
   @@map("store_status")
 }
 
-/// Un inquilino: la tienda que vende ropa a sus clientas.
+/// Un inquilino: la tienda que le vende a sus clientas.
 model Store {
   id   String @id @default(uuid()) @db.Uuid
   name String
@@ -97,11 +99,13 @@ model Store {
   subscription    Subscription?
   payments        Payment[]
   categories      Category[]
-  colors          Color[]
-  sizes           Size[]
   products        Product[]
   productImages   ProductImage[]
+  productOptions  ProductOption[]
+  productValues   ProductOptionValue[]
+  productAttrs    ProductAttribute[]
   variants        Variant[]
+  variantValues   VariantOptionValue[]
   collections     Collection[]
   collectionItems CollectionProduct[]
   coupons         Coupon[]
@@ -504,44 +508,6 @@ model Category {
   @@map("categories")
 }
 
-model Color {
-  id      String @id @default(uuid()) @db.Uuid
-  storeId String @map("store_id") @db.Uuid
-
-  slug String
-  name String
-
-  /// `#rrggbb`. El formato lo verifica un CHECK en la migración, no solo el DTO.
-  hex String
-
-  sortOrder Int     @default(0) @map("sort_order")
-  active    Boolean @default(true)
-
-  store    Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  variants Variant[]
-  images   ProductImage[]
-
-  @@unique([storeId, slug])
-  @@index([storeId, sortOrder])
-  @@map("colors")
-}
-
-model Size {
-  id      String @id @default(uuid()) @db.Uuid
-  storeId String @map("store_id") @db.Uuid
-
-  label     String
-  sortOrder Int     @default(0) @map("sort_order")
-  active    Boolean @default(true)
-
-  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  variants Variant[]
-
-  @@unique([storeId, label])
-  @@index([storeId, sortOrder])
-  @@map("sizes")
-}
-
 model Product {
   id      String @id @default(uuid()) @db.Uuid
   storeId String @map("store_id") @db.Uuid
@@ -549,8 +515,6 @@ model Product {
   slug        String
   name        String
   description String?
-  material    String?
-  care        String?
 
   categoryId String? @map("category_id") @db.Uuid
 
@@ -569,6 +533,8 @@ model Product {
   store       Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
   category    Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   images      ProductImage[]
+  options     ProductOption[]
+  attributes  ProductAttribute[]
   variants    Variant[]
   collections CollectionProduct[]
   orderItems  OrderItem[]
@@ -584,9 +550,11 @@ model ProductImage {
   id      String @id @default(uuid()) @db.Uuid
   storeId String @map("store_id") @db.Uuid
 
-  productId String  @map("product_id") @db.Uuid
-  /// Con qué color se corresponde la foto. Null si sirve para todos.
-  colorId   String? @map("color_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+
+  /// Con qué valor de opción se corresponde la foto —normalmente un color—.
+  /// Null si sirve para todo el producto, que es lo normal fuera de la ropa.
+  optionValueId String? @map("option_value_id") @db.Uuid
 
   /// Ruta en el almacenamiento, para poder borrar el archivo al quitar la fila.
   storagePath String @map("storage_path")
@@ -603,49 +571,150 @@ model ProductImage {
   alt       String?
   sortOrder Int     @default(0) @map("sort_order")
 
-  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  color   Color?  @relation(fields: [colorId], references: [id], onDelete: SetNull)
+  store   Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  value   ProductOptionValue? @relation(fields: [optionValueId], references: [id], onDelete: SetNull)
 
   @@index([productId, sortOrder])
   @@index([storeId])
   @@map("product_images")
 }
 
-/// Una combinación concreta de color y talla: lo que de verdad tiene stock.
+/// Un eje por el que se divide un producto: "Talla", "Color", "Molienda".
+///
+/// Las opciones son POR PRODUCTO y no listas globales de la tienda. Con listas
+/// globales toda tienda quedaba obligada a los dos mismos ejes —color y talla—,
+/// que es exactamente lo que impedía vender un libro sin inventarle una talla.
+/// Una librería declara "Formato"; una tostadora de café, "Molienda" y "Peso".
+model ProductOption {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  productId String @map("product_id") @db.Uuid
+
+  name      String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  store   Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  values  ProductOptionValue[]
+
+  @@unique([productId, name])
+  @@index([storeId])
+  @@map("product_options")
+}
+
+/// Un valor concreto de una opción: "M", "Rojo", "Fina".
+model ProductOptionValue {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  optionId String @map("option_id") @db.Uuid
+
+  value String
+
+  /// `#rrggbb`, solo cuando el valor es un color y la vitrina pinta la muestra.
+  /// Null en cualquier otra opción: un peso o un formato no tienen color.
+  hex String?
+
+  sortOrder Int @default(0) @map("sort_order")
+
+  store    Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  option   ProductOption        @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  images   ProductImage[]
+  variants VariantOptionValue[]
+
+  @@unique([optionId, value])
+  @@index([storeId])
+  @@map("product_option_values")
+}
+
+/// Un dato suelto del producto: "Material: Algodón", "ISBN: 978…", "Origen: Huila".
+///
+/// Sustituye a las columnas `material` y `care`, que solo le servían a la ropa.
+/// Cada rubro dice lo suyo sin que el modelo tenga que conocerlo de antemano.
+model ProductAttribute {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  productId String @map("product_id") @db.Uuid
+
+  name      String
+  value     String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, name])
+  @@index([storeId])
+  @@map("product_attributes")
+}
+
+/// Una combinación concreta de valores: lo que de verdad tiene stock.
 ///
 /// El inventario vive acá y no en el producto porque es lo único que permite
 /// decir "queda la M negra pero no la S". El pedido bloquea filas de esta
 /// tabla, no del producto.
+///
+/// Un producto SIN opciones tiene igual una variante, la única. Así el stock,
+/// el SKU y el precio viven siempre en el mismo sitio: sin eso habría dos
+/// caminos —producto simple y producto con variantes— y cada consulta de
+/// inventario tendría que acordarse de los dos.
 model Variant {
   id      String @id @default(uuid()) @db.Uuid
   storeId String @map("store_id") @db.Uuid
 
   productId String @map("product_id") @db.Uuid
-  colorId   String @map("color_id") @db.Uuid
-  sizeId    String @map("size_id") @db.Uuid
+
+  /// Los ids de sus valores de opción, ordenados y unidos por coma.
+  ///
+  /// Existe para que la base pueda prohibir dos variantes con la misma
+  /// combinación: con los valores en una tabla puente, un `@@unique` normal no
+  /// puede expresarlo. Lo calcula la aplicación al crear o editar la variante.
+  /// Cadena vacía cuando el producto no tiene opciones: la variante única.
+  optionsKey String @map("options_key")
 
   sku String?
 
   stock Int @default(0)
 
-  /// Pisa el `basePrice` del producto cuando una talla vale distinto.
+  /// Pisa el `basePrice` del producto cuando una combinación vale distinto.
   priceOverride Int? @map("price_override")
 
   active Boolean @default(true)
 
-  store           Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  product         Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
-  color           Color            @relation(fields: [colorId], references: [id], onDelete: Restrict)
-  size            Size             @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  store           Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product         Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  optionValues    VariantOptionValue[]
   orderItems      OrderItem[]
   restockRequests RestockRequest[]
 
-  @@unique([productId, colorId, sizeId])
+  @@unique([productId, optionsKey])
   @@unique([storeId, sku])
   @@index([storeId])
   @@index([productId])
   @@map("variants")
+}
+
+/// Qué valor de cada opción le toca a una variante.
+///
+/// Una fila por eje: la variante "Rojo · M" tiene dos, y la única de un libro
+/// sin opciones no tiene ninguna.
+model VariantOptionValue {
+  storeId String @map("store_id") @db.Uuid
+
+  variantId     String @map("variant_id") @db.Uuid
+  optionValueId String @map("option_value_id") @db.Uuid
+
+  store   Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  variant Variant            @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  value   ProductOptionValue @relation(fields: [optionValueId], references: [id], onDelete: Restrict)
+
+  @@id([variantId, optionValueId])
+  @@index([optionValueId])
+  @@index([storeId])
+  @@map("variant_option_values")
 }
 
 // ---------------------------------------------------------------------------
@@ -880,11 +949,15 @@ model OrderItem {
   variantId String? @map("variant_id") @db.Uuid
   productId String? @map("product_id") @db.Uuid
 
-  productName String  @map("product_name")
-  productSlug String  @map("product_slug")
-  colorName   String  @map("color_name")
-  sizeLabel   String  @map("size_label")
-  sku         String?
+  productName String @map("product_name")
+  productSlug String @map("product_slug")
+
+  /// Cómo se llamaba la variante el día de la compra: "Rojo · M", "500 g".
+  /// Vacío cuando el producto no tiene opciones. Es copia, no relación: el
+  /// pedido tiene que poder contarse aunque el producto ya no exista.
+  variantLabel String @map("variant_label")
+
+  sku String?
 
   unitPrice Int @map("unit_price")
   qty       Int

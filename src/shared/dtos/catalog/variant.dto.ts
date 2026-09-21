@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsInt,
@@ -15,26 +14,14 @@ const MAX_STOCK = 9999;
 const MAX_PRICE = 100_000_000;
 
 /**
- * Arma la matriz color × talla de una prenda.
+ * Crea las combinaciones que faltan entre los ejes del producto.
  *
- * Solo CREA las combinaciones que faltan; nunca borra las existentes, que
- * pueden estar dentro de un pedido. Mandar la misma matriz dos veces es seguro.
+ * No recibe qué combinar: los ejes ya están declarados en el producto, y
+ * repetirlos en la petición sería pedir que coincidan dos fuentes. Solo CREA
+ * lo que falta; nunca borra, porque una variante puede estar en un pedido.
+ * Mandarlo dos veces es seguro.
  */
 export class GenerateVariantsDto {
-  @ApiProperty({ type: [String], format: 'uuid' })
-  @IsArray()
-  @ArrayMinSize(1, { message: 'Elige al menos un color.' })
-  @ArrayMaxSize(50)
-  @IsUUID(undefined, { each: true })
-  colorIds!: string[];
-
-  @ApiProperty({ type: [String], format: 'uuid' })
-  @IsArray()
-  @ArrayMinSize(1, { message: 'Elige al menos una talla.' })
-  @ArrayMaxSize(50)
-  @IsUUID(undefined, { each: true })
-  sizeIds!: string[];
-
   @ApiPropertyOptional({ default: 0, minimum: 0, maximum: MAX_STOCK })
   @IsOptional()
   @IsInt()
@@ -48,6 +35,32 @@ export class GenerateVariantsResultDto {
   created!: number;
 }
 
+export class CreateVariantDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description: 'Un valor por cada eje del producto. Vacío si el producto no tiene ejes.',
+  })
+  @IsArray()
+  @ArrayMaxSize(3)
+  @IsUUID(undefined, { each: true })
+  optionValueIds!: string[];
+
+  @ApiPropertyOptional({ default: 0, minimum: 0, maximum: MAX_STOCK })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_STOCK)
+  stock?: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_PRICE)
+  priceOverride?: number | null;
+}
+
 export class UpdateVariantDto {
   @ApiPropertyOptional({ minimum: 0, maximum: MAX_STOCK })
   @IsOptional()
@@ -58,7 +71,7 @@ export class UpdateVariantDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Precio propio de la variante. null vuelve al precio base de la prenda.',
+    description: 'Precio propio de la variante. null vuelve al precio base del producto.',
   })
   @IsOptional()
   @IsInt({ message: 'El precio no lleva decimales.' })
@@ -72,29 +85,22 @@ export class UpdateVariantDto {
   active?: boolean;
 }
 
-export class VariantColorDto {
-  @ApiProperty()
+/** Un eje resuelto de la variante: "Color" vale "Rojo". */
+export class VariantValueDto {
+  @ApiProperty({ description: 'Id del valor, no del eje.' })
   id!: string;
 
   @ApiProperty()
-  slug!: string;
+  optionId!: string;
 
-  @ApiProperty()
-  name!: string;
+  @ApiProperty({ example: 'Color' })
+  optionName!: string;
 
-  @ApiProperty()
-  hex!: string;
-}
+  @ApiProperty({ example: 'Rojo' })
+  value!: string;
 
-export class VariantSizeDto {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  label!: string;
-
-  @ApiProperty()
-  sortOrder!: number;
+  @ApiProperty({ nullable: true })
+  hex!: string | null;
 }
 
 export class VariantDto {
@@ -116,11 +122,14 @@ export class VariantDto {
   @ApiProperty()
   active!: boolean;
 
-  @ApiProperty({ type: VariantColorDto })
-  color!: VariantColorDto;
+  @ApiProperty({
+    example: 'Rojo · M',
+    description: 'Cómo nombrar la variante. Vacío si el producto no tiene ejes.',
+  })
+  label!: string;
 
-  @ApiProperty({ type: VariantSizeDto })
-  size!: VariantSizeDto;
+  @ApiProperty({ type: [VariantValueDto] })
+  values!: VariantValueDto[];
 }
 
 export class DeleteVariantResultDto {
