@@ -22,13 +22,13 @@ import { Trim } from '@shared/dtos/transforms';
 /** Una línea del carrito: el navegador manda identificadores y cantidades, nunca precios. */
 export class CartLineDto {
   @ApiProperty({ format: 'uuid' })
-  @IsUUID(undefined, { message: 'Alguna prenda del carrito no es válida.' })
+  @IsUUID(undefined, { message: 'Algún producto del carrito no es válido.' })
   variantId!: string;
 
   @ApiProperty({ minimum: 1, maximum: MAX_QTY_PER_LINE })
   @IsInt({ message: 'La cantidad es un número entero.' })
   @Min(1)
-  @Max(MAX_QTY_PER_LINE, { message: `Máximo ${MAX_QTY_PER_LINE} unidades por prenda.` })
+  @Max(MAX_QTY_PER_LINE, { message: `Máximo ${MAX_QTY_PER_LINE} unidades por producto.` })
   qty!: number;
 }
 
@@ -76,7 +76,7 @@ export class QuotedLineDto {
   sku!: string | null;
 
   @ApiProperty({
-    description: 'Precio de hoy, de la base: el propio de la variante o el de la prenda.',
+    description: 'Precio de hoy, de la base: el propio de la variante o el de el producto.',
   })
   unitPrice!: number;
 
@@ -150,7 +150,10 @@ export class CartQuoteResultDto {
   @ApiProperty({ type: [QuotedLineDto] })
   lines!: QuotedLineDto[];
 
-  @ApiProperty({ type: [RemovedLineDto], description: 'Prendas que ya no existen o se agotaron.' })
+  @ApiProperty({
+    type: [RemovedLineDto],
+    description: 'Productos que ya no existen o se agotaron.',
+  })
   removed!: RemovedLineDto[];
 
   @ApiProperty({ type: AppliedCouponDto, nullable: true })

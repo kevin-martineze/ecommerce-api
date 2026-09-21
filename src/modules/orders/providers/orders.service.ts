@@ -135,7 +135,7 @@ export class OrdersService {
 /**
  * Devuelve al inventario lo que el pedido había descontado.
  *
- * Las variantes que ya no existen (su prenda se borró, y la línea quedó con
+ * Las variantes que ya no existen (su producto se borró, y la línea quedó con
  * `variantId` en null) se saltan: no hay dónde devolver ese stock.
  */
 async function restoreStock(

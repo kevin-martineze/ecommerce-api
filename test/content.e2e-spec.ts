@@ -233,7 +233,7 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
       collectionHero = second.body.heroStoragePath;
     });
 
-    it('etiqueta una prenda y mueve su punto sin duplicarla', async () => {
+    it('etiqueta un producto y mueve su punto sin duplicarla', async () => {
       const url = `/collections/${collection.id}/products/${productId}`;
 
       expect((await panel('PUT', url, { hotspotX: 25.5, hotspotY: 60 })).status).toBe(200);
@@ -249,14 +249,14 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
       expect(detail.body.items).toEqual([expect.objectContaining({ hotspotX: 10, hotspotY: 60 })]);
     });
 
-    it('no etiqueta prendas de otra tienda ni puntos fuera de la foto', async () => {
+    it('no etiqueta productos de otra tienda ni puntos fuera de la foto', async () => {
       const base = `/collections/${collection.id}/products`;
 
       expect((await panel('PUT', `${base}/${otherProductId}`, {})).status).toBe(400);
       expect((await panel('PUT', `${base}/${productId}`, { hotspotX: 120 })).status).toBe(400);
     });
 
-    it('quitar la prenda; quitarla de nuevo es 404', async () => {
+    it('quitar el producto; quitarla de nuevo es 404', async () => {
       const url = `/collections/${collection.id}/products/${productId}`;
 
       expect((await panel('DELETE', url)).status).toBe(204);

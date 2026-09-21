@@ -304,7 +304,7 @@ export class AuthService {
       },
     });
 
-    // Ya no se siembran tallas ni colores: los ejes de cada producto los
+    // Ya no se siembran variaciones ni colores: los ejes de cada producto los
     // declara ese producto, y sembrar "S, M, L" en la tienda de una librería
     // sería estorbo. Lo que el rubro sugiera se resuelve en el onboarding, no
     // creando filas que quizá nadie use.

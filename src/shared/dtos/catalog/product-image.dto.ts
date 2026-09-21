@@ -12,7 +12,7 @@ export class UploadProductImageDto {
   @ApiPropertyOptional({ format: 'uuid', description: 'Color al que corresponde la foto.' })
   optionValueId?: string;
 
-  @ApiPropertyOptional({ description: 'Texto alternativo. Si no viene, el nombre de la prenda.' })
+  @ApiPropertyOptional({ description: 'Texto alternativo. Si no viene, el nombre de el producto.' })
   alt?: string;
 }
 
@@ -28,7 +28,7 @@ export class UploadHeroImageDto {
 export class ReorderProductImagesDto {
   @ApiProperty({
     type: [String],
-    description: 'Todas las fotos de la prenda, una vez cada una, en el orden nuevo.',
+    description: 'Todas las fotos de el producto, una vez cada una, en el orden nuevo.',
   })
   @IsArray()
   @ArrayMinSize(1)

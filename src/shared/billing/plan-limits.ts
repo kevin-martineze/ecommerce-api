@@ -15,9 +15,9 @@ import { TenantClient } from '@db/prisma.service';
 export type PlanLimit = 'maxProducts' | 'maxOrdersPerMonth' | 'maxImagesPerProduct';
 
 const MESSAGES: Record<PlanLimit, (limit: number) => string> = {
-  maxProducts: (limit) => `Tu plan admite hasta ${limit} prendas.`,
+  maxProducts: (limit) => `Tu plan admite hasta ${limit} productos.`,
   maxOrdersPerMonth: (limit) => `Tu plan admite hasta ${limit} pedidos por mes.`,
-  maxImagesPerProduct: (limit) => `Tu plan admite hasta ${limit} fotos por prenda.`,
+  maxImagesPerProduct: (limit) => `Tu plan admite hasta ${limit} fotos por producto.`,
 };
 
 /**

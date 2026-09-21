@@ -110,7 +110,7 @@ describe('Pedidos y comercio (e2e)', () => {
       { name: 'Vestido Pedido', basePrice: 100000, status: 'ACTIVE' },
       [
         { name: 'Color', values: [{ value: 'Negro', hex: '#000000' }] },
-        { name: 'Talla', values: [{ value: 'S' }, { value: 'M' }] },
+        { name: 'Variación', values: [{ value: 'S' }, { value: 'M' }] },
       ],
       0,
     );
@@ -172,7 +172,7 @@ describe('Pedidos y comercio (e2e)', () => {
           adjustedFrom: null,
         }),
       ]);
-      expect(body.removed).toEqual([{ variantId: NO_SUCH_UUID, label: 'Prenda no disponible' }]);
+      expect(body.removed).toEqual([{ variantId: NO_SUCH_UUID, label: 'Producto no disponible' }]);
       // 3 × 100.000 + 120.000 = 420.000; 10 % = 42.000; más 8.000 de envío.
       expect(body.totals).toEqual({
         subtotal: 420000,

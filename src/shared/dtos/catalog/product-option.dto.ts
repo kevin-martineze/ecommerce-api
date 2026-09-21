@@ -15,14 +15,14 @@ import {
  * Los ejes por los que se divide un producto.
  *
  * Son del PRODUCTO y no de la tienda: una tienda de ropa declara Color y
- * Talla, una librería declara Formato, una tostadora declara Molienda y Peso.
+ * Variación, una librería declara Formato, una tostadora declara Molienda y Peso.
  * El modelo no conoce ningún rubro de antemano.
  */
 
 /** Cuántos ejes admite un producto. Tres ya es Shopify; cuatro no lo pide nadie. */
 const MAX_OPCIONES = 3;
 
-/** Valores por eje. Cuarenta tallas es mucho; cien es un error de carga. */
+/** Valores por eje. Cuarenta variaciones es mucho; cien es un error de carga. */
 const MAX_VALORES = 50;
 
 export class ProductOptionValueDto {
@@ -43,7 +43,7 @@ export class ProductOptionDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty({ example: 'Talla' })
+  @ApiProperty({ example: 'Variación' })
   name!: string;
 
   @ApiProperty()
@@ -66,7 +66,7 @@ export class OptionValueInputDto {
 }
 
 export class OptionInputDto {
-  @ApiProperty({ example: 'Talla' })
+  @ApiProperty({ example: 'Variación' })
   @IsString()
   @Length(1, 40, { message: 'El nombre del eje lleva entre 1 y 40 caracteres.' })
   name!: string;

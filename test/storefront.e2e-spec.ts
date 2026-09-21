@@ -3,7 +3,7 @@ import { Session, startTestApp, TestApp } from './utils/test-app';
 /**
  * Tienda pública de punta a punta.
  *
- * Arma un catálogo real por las rutas del panel —con una prenda en borrador,
+ * Arma un catálogo real por las rutas del panel —con un producto en borrador,
  * una categoría oculta, una variante sin stock— y verifica que la visitante ve
  * exactamente lo que veía con las políticas de Supabase: lo publicado, nada más.
  */
@@ -69,7 +69,7 @@ describe('Tienda pública (e2e)', () => {
       if (matrices.length > 0) {
         const tonos: Record<string, string> = { Negro: '#000000', Blanco: '#ffffff' };
         const colores = [...new Set(matrices.map((matriz) => matriz.color))];
-        const tallas = [...new Set(matrices.map((matriz) => matriz.size))];
+        const variaciones = [...new Set(matrices.map((matriz) => matriz.size))];
 
         const ejes = (
           await panel<{ name: string; values: { id: string; value: string }[] }[]>(
@@ -81,7 +81,10 @@ describe('Tienda pública (e2e)', () => {
                   name: 'Color',
                   values: colores.map((color) => ({ value: color, hex: tonos[color] })),
                 },
-                { name: 'Talla', values: tallas.map((talla) => ({ value: talla })) },
+                {
+                  name: 'Variación',
+                  values: variaciones.map((variación) => ({ value: variación })),
+                },
               ],
             },
           )
@@ -96,7 +99,7 @@ describe('Tienda pública (e2e)', () => {
         // huecos, y la vitrina tiene que contarlos bien.
         for (const matriz of matrices) {
           await panel('POST', `/products/${created.id}/variants/one`, {
-            optionValueIds: [valorId('Color', matriz.color), valorId('Talla', matriz.size)],
+            optionValueIds: [valorId('Color', matriz.color), valorId('Variación', matriz.size)],
             stock: matriz.stock,
           });
         }
@@ -161,9 +164,9 @@ describe('Tienda pública (e2e)', () => {
         'blusa-blanca',
       ]);
       expect(
-        (await pub<Page>('/products?options=Color%3ABlanco&options=Talla%3AS')).body.total,
+        (await pub<Page>('/products?options=Color%3ABlanco&options=Variación%3AS')).body.total,
       ).toBe(0);
-      expect((await pub<Page>('/products?options=Talla%3AM')).body.total).toBe(2);
+      expect((await pub<Page>('/products?options=Variación%3AM')).body.total).toBe(2);
     });
 
     it('el filtro no distingue mayúsculas: la URL la teclea alguien', async () => {
@@ -218,7 +221,7 @@ describe('Tienda pública (e2e)', () => {
       expect(body.categories.map((category) => category.slug)).toEqual(['vestidos']);
       // Los ejes se agrupan por nombre entre productos distintos: el "Color" del
       // vestido y el de la blusa son un solo filtro para quien navega.
-      expect(body.options.map((eje) => eje.name)).toEqual(['Color', 'Talla']);
+      expect(body.options.map((eje) => eje.name)).toEqual(['Color', 'Variación']);
       expect(body.options[0]?.values.map((valor) => valor.value)).toEqual(['Negro', 'Blanco']);
       expect(body.priceRange).toEqual({ min: 50000, max: 100000 });
     });
@@ -239,7 +242,7 @@ describe('Tienda pública (e2e)', () => {
       // Cada variante dice con qué valores se arma: es con lo que la ficha
       // resuelve qué combinación eligió la clienta.
       expect(body.variants.every((variant) => variant.valueIds.length === 2)).toBe(true);
-      expect(body.options.map((eje) => eje.name)).toEqual(['Color', 'Talla']);
+      expect(body.options.map((eje) => eje.name)).toEqual(['Color', 'Variación']);
     });
 
     it('un borrador responde 404', async () => {
@@ -343,7 +346,7 @@ describe('Tienda pública (e2e)', () => {
       expect(body.highlights).toEqual([]);
     });
 
-    it('una colección muestra solo prendas publicadas, con su posición', async () => {
+    it('una colección muestra solo productos publicadas, con su posición', async () => {
       const { body } = await pub<{
         items: { hotspotX: number | null; hotspotY: number | null; product: Card }[];
       }>('/collections/verano');

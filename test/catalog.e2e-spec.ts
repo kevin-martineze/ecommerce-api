@@ -276,7 +276,7 @@ describe('Catálogo del panel (e2e)', () => {
             { value: 'Blanco', hex: '#ffffff' },
           ],
         },
-        { name: 'Talla', values: [{ value: 'S' }, { value: 'M' }] },
+        { name: 'Variación', values: [{ value: 'S' }, { value: 'M' }] },
       ]);
 
       const url = `/stores/${a.storeId}/products/${product.id}/variants`;
@@ -330,7 +330,7 @@ describe('Catálogo del panel (e2e)', () => {
       expect(status).toBe(400);
     });
 
-    it('numera el SKU cuando otra prenda empieza igual', async () => {
+    it('numera el SKU cuando otra producto empieza igual', async () => {
       const twin = await call<ProductBody>('POST', `/stores/${a.storeId}/products`, a, {
         name: 'Vestido Lino Negro',
         basePrice: 150000,
@@ -338,7 +338,7 @@ describe('Catálogo del panel (e2e)', () => {
 
       await declararEjes(a, a.storeId, twin.body.id, [
         { name: 'Color', values: [{ value: 'Negro', hex: '#000000' }] },
-        { name: 'Talla', values: [{ value: 'S' }] },
+        { name: 'Variación', values: [{ value: 'S' }] },
       ]);
 
       await call('POST', `/stores/${a.storeId}/products/${twin.body.id}/variants`, a, {});
@@ -356,7 +356,7 @@ describe('Catálogo del panel (e2e)', () => {
       const variant = product.variants[0];
 
       if (!variant) {
-        throw new Error('La prenda no tiene variantes.');
+        throw new Error('El producto no tiene variantes.');
       }
 
       const patched = await call<{ stock: number }>(
@@ -389,7 +389,7 @@ describe('Catálogo del panel (e2e)', () => {
       // una pantalla de atributos sería la peor clase de sorpresa.
       const { status, body } = await declararEjes(a, a.storeId, product.id, [
         { name: 'Color', values: [{ value: 'Blanco', hex: '#ffffff' }] },
-        { name: 'Talla', values: [{ value: 'S' }, { value: 'M' }] },
+        { name: 'Variación', values: [{ value: 'S' }, { value: 'M' }] },
       ]);
 
       expect(status).toBe(400);
@@ -405,7 +405,7 @@ describe('Catálogo del panel (e2e)', () => {
             { value: 'Blanco', hex: '#ffffff' },
           ],
         },
-        { name: 'Talla', values: [{ value: 'S' }, { value: 'M' }, { value: 'L' }] },
+        { name: 'Variación', values: [{ value: 'S' }, { value: 'M' }, { value: 'L' }] },
       ]);
 
       const { body } = await call<{ created: number }>(
@@ -415,7 +415,7 @@ describe('Catálogo del panel (e2e)', () => {
         {},
       );
 
-      // Dos colores × tres tallas son seis; cuatro ya existían.
+      // Dos colores × tres variaciones son seis; cuatro ya existían.
       expect(body.created).toBe(2);
     });
 

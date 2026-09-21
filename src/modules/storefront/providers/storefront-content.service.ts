@@ -147,7 +147,7 @@ export class StorefrontContentService {
         description: collection.description,
         heroImageUrl: collection.heroImageUrl,
         sortOrder: collection.sortOrder,
-        // Una prenda despublicada sale de la colección sin tocar la colección.
+        // Un producto despublicada sale de la colección sin tocar la colección.
         items: collection.items
           .filter((item) => item.product.status === 'ACTIVE')
           .map((item) => ({
@@ -193,7 +193,7 @@ export class StorefrontContentService {
    * "Avísame cuando vuelva".
    *
    * Solo se acepta sobre una variante que la visitante puede ver: activa y de
-   * una prenda publicada. Pedir aviso de algo oculto no sirve de nada y dejaría
+   * un producto publicada. Pedir aviso de algo oculto no sirve de nada y dejaría
    * sondear qué variantes existen.
    */
   async requestRestock(storeSlug: string, dto: CreateRestockRequestDto): Promise<void> {
@@ -211,7 +211,7 @@ export class StorefrontContentService {
       });
 
       if (!variant) {
-        throw new NotFoundException('Esa talla ya no está disponible.');
+        throw new NotFoundException('Esa variación ya no está disponible.');
       }
 
       await tx.restockRequest.create({

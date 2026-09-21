@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { ProductCardDto } from '@shared/dtos/storefront/product.dto';
 
 /**
- * Lo que una tarjeta de prenda necesita, y nada más: es la consulta que más se
+ * Lo que una tarjeta de producto necesita, y nada más: es la consulta que más se
  * repite en la tienda (listado, portada, relacionados, favoritos, colecciones).
  *
  * Solo variantes ACTIVAS. Es la misma regla que la política `variants_read` de

@@ -27,7 +27,7 @@ export class StorefrontCatalogController {
   constructor(private readonly catalog: StorefrontCatalogService) {}
 
   @Get('products')
-  @ApiOperation({ summary: 'Listado de prendas publicadas con filtros, orden y páginas de 12.' })
+  @ApiOperation({ summary: 'Listado de productos publicadas con filtros, orden y páginas de 12.' })
   search(
     @Param('storeSlug') storeSlug: string,
     @Query() query: ProductSearchQueryDto,
@@ -36,7 +36,9 @@ export class StorefrontCatalogController {
   }
 
   @Get('facets')
-  @ApiOperation({ summary: 'Opciones para los filtros: categorías, colores, tallas y precios.' })
+  @ApiOperation({
+    summary: 'Opciones para los filtros: categorías, colores, variaciones y precios.',
+  })
   facets(@Param('storeSlug') storeSlug: string): Promise<CatalogFacetsDto> {
     return this.catalog.facets(storeSlug);
   }
@@ -52,7 +54,7 @@ export class StorefrontCatalogController {
   }
 
   @Get('products/:productSlug')
-  @ApiOperation({ summary: 'Ficha de una prenda publicada, con sus variantes activas.' })
+  @ApiOperation({ summary: 'Ficha de un producto publicada, con sus variantes activas.' })
   detail(
     @Param('storeSlug') storeSlug: string,
     @Param('productSlug') productSlug: string,
@@ -61,7 +63,7 @@ export class StorefrontCatalogController {
   }
 
   @Get('products/:productSlug/related')
-  @ApiOperation({ summary: 'Hasta 4 prendas relacionadas.' })
+  @ApiOperation({ summary: 'Hasta 4 productos relacionadas.' })
   related(
     @Param('storeSlug') storeSlug: string,
     @Param('productSlug') productSlug: string,

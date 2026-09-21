@@ -54,6 +54,6 @@ export class CategoryDto {
   @ApiProperty()
   active!: boolean;
 
-  @ApiProperty({ description: 'Prendas asignadas a la categoría.' })
+  @ApiProperty({ description: 'Productos asignadas a la categoría.' })
   usageCount!: number;
 }

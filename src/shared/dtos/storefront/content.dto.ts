@@ -124,7 +124,10 @@ export class CollectionItemDto {
 }
 
 export class PublicCollectionDetailDto extends PublicCollectionDto {
-  @ApiProperty({ type: [CollectionItemDto], description: 'Solo prendas publicadas, en su orden.' })
+  @ApiProperty({
+    type: [CollectionItemDto],
+    description: 'Solo productos publicadas, en su orden.',
+  })
   items!: CollectionItemDto[];
 }
 
@@ -148,8 +151,8 @@ export class SitemapDto {
 }
 
 export class CreateRestockRequestDto {
-  @ApiProperty({ format: 'uuid', description: 'La variante agotada: color y talla.' })
-  @IsUUID(undefined, { message: 'Elige color y talla.' })
+  @ApiProperty({ format: 'uuid', description: 'La variante agotada: color y variación.' })
+  @IsUUID(undefined, { message: 'Elige color y variación.' })
   variantId!: string;
 
   /** Mismo rango que la política de la versión con Supabase: 5 a 120 caracteres. */

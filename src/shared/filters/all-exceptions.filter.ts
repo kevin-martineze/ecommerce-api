@@ -67,7 +67,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
       // `ValidationPipe` responde con un objeto { message: string[], error }.
       // Se conserva el detalle porque el frontend lo pinta campo por campo.
-      // Una excepción de negocio también puede adjuntar `details` —qué prendas
+      // Una excepción de negocio también puede adjuntar `details` —qué productos
       // se agotaron, por qué no aplica un cupón— y ese se deja pasar tal cual.
       if (typeof response === 'object' && response !== null) {
         const shape = response as { message?: unknown; error?: unknown; details?: unknown };

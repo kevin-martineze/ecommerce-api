@@ -7,7 +7,7 @@ import { Transform } from 'class-transformer';
 export const Trim = () =>
   Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value));
 
-/** Igual que `Trim`, y además en mayúsculas. Para tallas: "m" y "M" son la misma. */
+/** Igual que `Trim`, y además en mayúsculas. Para variaciones: "m" y "M" son la misma. */
 export const TrimUpperCase = () =>
   Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,

@@ -17,7 +17,7 @@ export class ProductOptionsController {
   constructor(private readonly options: ProductOptionsService) {}
 
   @Get('options')
-  @ApiOperation({ summary: 'Los ejes del producto: Talla, Color, Molienda…' })
+  @ApiOperation({ summary: 'Los ejes del producto: Variación, Color, Molienda…' })
   list(
     @Param('storeId') storeId: string,
     @Param('productId', ParseUUIDPipe) productId: string,

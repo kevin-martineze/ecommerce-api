@@ -251,7 +251,7 @@ describe('Plataforma (e2e)', () => {
       await platform('PUT', `/stores/${shop.storeId}/plan`, { planCode: 'basico' });
     });
 
-    it('el límite de prendas del plan se aplica al crear', async () => {
+    it('el límite de productos del plan se aplica al crear', async () => {
       await api.withOwner((client) =>
         client.query(`update plans set max_products = 1 where code = 'basico'`),
       );
@@ -273,7 +273,7 @@ describe('Plataforma (e2e)', () => {
       });
     });
 
-    it('la consola cuenta las prendas de cada tienda aunque estén bajo RLS', async () => {
+    it('la consola cuenta los productos de cada tienda aunque estén bajo RLS', async () => {
       const { body } = await platform<StoreRow[]>('GET', `/stores?q=${shop.slug}`);
 
       expect(body.find((store) => store.id === shop.storeId)?.productCount).toBe(1);

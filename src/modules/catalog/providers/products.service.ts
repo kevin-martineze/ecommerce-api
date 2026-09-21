@@ -160,7 +160,7 @@ export class ProductsService {
           await assertCategoryInStore(tx, storeId, dto.categoryId);
         }
 
-        // La regla del precio tachado se evalúa sobre cómo QUEDA la prenda, no
+        // La regla del precio tachado se evalúa sobre cómo QUEDA el producto, no
         // sobre lo que vino: subir solo el precio base por encima del tachado
         // existente también tiene que rechazarse.
         const basePrice = dto.basePrice ?? current.basePrice;
@@ -195,12 +195,12 @@ export class ProductsService {
   }
 
   /**
-   * Borra la prenda, o la archiva si ya se vendió.
+   * Borra el producto, o la archiva si ya se vendió.
    *
    * Técnicamente se podría borrar siempre: las líneas de pedido guardan copia
-   * de nombre, color, talla y precio, y su `productId` pasa a null. Pero ese
-   * enlace es lo que deja ir de un pedido a la prenda y contar ventas por
-   * prenda. Archivar la saca de la tienda igual y no rompe nada de eso.
+   * de nombre, color, variación y precio, y su `productId` pasa a null. Pero ese
+   * enlace es lo que deja ir de un pedido a el producto y contar ventas por
+   * producto. Archivar la saca de la tienda igual y no rompe nada de eso.
    *
    * Los archivos de las fotos se borran después de confirmar la transacción y
    * solo si de verdad se borró la fila.

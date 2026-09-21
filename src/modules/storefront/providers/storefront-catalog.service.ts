@@ -278,7 +278,7 @@ export class StorefrontCatalogService {
  * Agrupa `Eje:Valor` por eje.
  *
  * Varios valores del mismo eje suman (rojo o azul); ejes distintos restringen
- * (rojo Y talla M). Es lo que espera cualquiera que haya usado una tienda.
+ * (rojo Y variación M). Es lo que espera cualquiera que haya usado una tienda.
  */
 function porEje(options: readonly string[]): Map<string, string[]> {
   const grupos = new Map<string, string[]>();

@@ -139,7 +139,7 @@ export class VariantsService {
   /**
    * Crea UNA combinación concreta.
    *
-   * Sirve para lo que `generate` no cubre: la talla suelta que solo existe en
+   * Sirve para lo que `generate` no cubre: la variación suelta que solo existe en
    * un color. Los valores tienen que ser del propio producto —si no, una
    * tienda podría colgarle a su variante el valor de otra— y no puede repetir
    * una combinación que ya existe.
@@ -240,7 +240,7 @@ export class VariantsService {
   /**
    * Borra la variante, o la desactiva en cero si ya se vendió.
    *
-   * Mismo criterio que con la prenda: la línea de pedido sobrevive al borrado
+   * Mismo criterio que con el producto: la línea de pedido sobrevive al borrado
    * porque guarda copia, pero perdería el enlace a la variante.
    */
   remove(storeId: string, variantId: string): Promise<DeleteVariantResultDto> {

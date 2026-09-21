@@ -70,10 +70,10 @@ export class CategoriesService {
   }
 
   /**
-   * Borra la categoría SIEMPRE, aunque tenga prendas.
+   * Borra la categoría SIEMPRE, aunque tenga productos.
    *
-   * No se oculta como un color o una talla en uso, y es deliberado: igual que
-   * en la versión con Supabase, las prendas apuntan a la categoría con
+   * No se oculta como un color o una variación en uso, y es deliberado: igual que
+   * en la versión con Supabase, los productos apuntan a la categoría con
    * `onDelete: SetNull`, así que borrarla las deja sin categoría y nada más.
    * Un color, en cambio, es parte de lo que se vendió.
    */

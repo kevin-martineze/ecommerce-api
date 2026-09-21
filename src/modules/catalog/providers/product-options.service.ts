@@ -12,9 +12,9 @@ const PRODUCTO_NO_EXISTE = 'Ese producto no existe.';
 /**
  * Los ejes de un producto y sus datos sueltos.
  *
- * Reemplaza a las listas de colores y tallas de la tienda. Aquellas obligaban
- * a que toda tienda vendiera por color y talla; estas las declara cada
- * producto, así que la misma tienda puede vender camisas por talla, libros por
+ * Reemplaza a las listas de colores y variaciones de la tienda. Aquellas obligaban
+ * a que toda tienda vendiera por color y variación; estas las declara cada
+ * producto, así que la misma tienda puede vender camisas por variación, libros por
  * formato y café por molienda y peso.
  *
  * Las dos operaciones son declarativas: se manda la lista completa y queda esa.
@@ -44,7 +44,7 @@ export class ProductOptionsService {
   /**
    * Deja los ejes del producto exactamente como vengan.
    *
-   * Lo que se conserva se conserva POR NOMBRE: si "Talla" sigue en la lista,
+   * Lo que se conserva se conserva POR NOMBRE: si "Variación" sigue en la lista,
    * sus valores mantienen su id, y con ellos las variantes que los usan. Solo
    * así se puede añadir un color sin destruir el inventario.
    *

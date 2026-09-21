@@ -131,7 +131,7 @@ export class CheckoutService {
         const variant = variants.get(line.variantId);
 
         if (!isSellable(variant)) {
-          removed.push({ variantId: line.variantId, label: 'Prenda no disponible' });
+          removed.push({ variantId: line.variantId, label: 'Producto no disponible' });
           continue;
         }
 
@@ -294,14 +294,14 @@ export class CheckoutService {
 
     if (lines.some((line) => line.qty > MAX_QTY_PER_LINE)) {
       throw new BadRequestException({
-        message: `Máximo ${MAX_QTY_PER_LINE} unidades por prenda.`,
+        message: `Máximo ${MAX_QTY_PER_LINE} unidades por producto.`,
         error: 'qty_too_high',
       });
     }
 
     const variantIds = lines.map((line) => line.variantId).sort();
 
-    // Bloqueo ordenado por id: dos pedidos que comparten prendas las toman en el
+    // Bloqueo ordenado por id: dos pedidos que comparten productos las toman en el
     // mismo orden y no pueden bloquearse en cruz.
     await tx.$queryRaw`
       select id from variants
@@ -345,7 +345,7 @@ export class CheckoutService {
     if (problems.length > 0) {
       throw new ConflictException({
         message:
-          'Se agotaron algunas prendas mientras armabas el pedido. Ajusta las cantidades e intenta de nuevo.',
+          'Se agotaron algunas productos mientras armabas el pedido. Ajusta las cantidades e intenta de nuevo.',
         error: 'out_of_stock',
         details: problems,
       });
@@ -508,7 +508,7 @@ function findByIdempotencyKey(
   return tx.order.findFirst({ where: { storeId, idempotencyKey: key }, select: CREATED_SELECT });
 }
 
-/** Mismas condiciones que las políticas de Supabase: variante activa de una prenda publicada. */
+/** Mismas condiciones que las políticas de Supabase: variante activa de un producto publicada. */
 function isSellable(variant: VariantForLine | undefined): variant is VariantForLine {
   return variant !== undefined && variant.active && variant.product.status === 'ACTIVE';
 }

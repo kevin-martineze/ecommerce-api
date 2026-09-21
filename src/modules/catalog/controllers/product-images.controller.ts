@@ -41,7 +41,7 @@ export class ProductImagesController {
   }
 
   @Put('products/:productId/images/order')
-  @ApiOperation({ summary: 'Reordena todas las fotos de la prenda. La primera es la principal.' })
+  @ApiOperation({ summary: 'Reordena todas las fotos de el producto. La primera es la principal.' })
   reorder(
     @Param('storeId') storeId: string,
     @Param('productId', ParseUUIDPipe) productId: string,

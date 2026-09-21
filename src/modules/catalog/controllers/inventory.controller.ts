@@ -13,7 +13,7 @@ export class InventoryController {
 
   /** Para cambiar el stock se usa `PATCH /stores/:storeId/variants/:variantId`. */
   @Get()
-  @ApiOperation({ summary: 'Stock por prenda, empezando por lo que está por agotarse.' })
+  @ApiOperation({ summary: 'Stock por producto, empezando por lo que está por agotarse.' })
   list(
     @Param('storeId') storeId: string,
     @Query() query: InventoryQueryDto,

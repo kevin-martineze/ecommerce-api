@@ -11,7 +11,7 @@ export interface AnthropicOptions {
 /**
  * Cuántas veces se le deja pedir herramientas antes de obligarlo a responder.
  *
- * Dos alcanzan para «busca la prenda y mira el envío». Más rondas es más
+ * Dos alcanzan para «busca el producto y mira el envío». Más rondas es más
  * dinero por conversación sin mejor respuesta: si con dos consultas no supo,
  * lo que corresponde es pasar la conversación a WhatsApp.
  */
@@ -22,7 +22,7 @@ const MAX_RONDAS = 2;
  *
  * Usa herramientas en vez de meter el catálogo en el instructivo: es más
  * barato —solo viaja lo que hizo falta— y es lo que evita que hable de
- * prendas que no existen.
+ * productos que no existen.
  *
  * El instructivo va marcado para caché: es el bloque que se repite en cada
  * mensaje de la conversación, y es donde está el ahorro.

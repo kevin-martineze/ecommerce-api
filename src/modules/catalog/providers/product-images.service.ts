@@ -11,7 +11,7 @@ import { PrismaService } from '@db/prisma.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Fotos de prenda: subir, ordenar y quitar. */
+/** Fotos de producto: subir, ordenar y quitar. */
 @Injectable()
 export class ProductImagesService {
   private readonly logger = new Logger(ProductImagesService.name);
@@ -89,7 +89,7 @@ export class ProductImagesService {
   }
 
   /**
-   * Reordena las fotos de una prenda. La primera es la principal.
+   * Reordena las fotos de un producto. La primera es la principal.
    *
    * Exige la lista COMPLETA: un orden parcial dejaría dos fotos con el mismo
    * `sortOrder` y la principal dependería de cómo desempate la base.
@@ -110,7 +110,7 @@ export class ProductImagesService {
         imageIds.some((id) => !current.has(id))
       ) {
         throw new BadRequestException(
-          'La lista tiene que incluir todas las fotos de la prenda, una vez cada una.',
+          'La lista tiene que incluir todas las fotos de el producto, una vez cada una.',
         );
       }
 
@@ -127,7 +127,7 @@ export class ProductImagesService {
     });
   }
 
-  /** La fila primero y el archivo después: nunca queda una prenda apuntando a una foto que no está. */
+  /** La fila primero y el archivo después: nunca queda un producto apuntando a una foto que no está. */
   async remove(storeId: string, imageId: string): Promise<void> {
     const image = await this.prisma.forStore(storeId, async (tx) => {
       const found = await tx.productImage.findFirst({

@@ -116,7 +116,7 @@ export interface Totals {
 /**
  * El total del pedido.
  *
- * El envío es gratis cuando lo que se paga por las prendas —subtotal menos
+ * El envío es gratis cuando lo que se paga por los productos —subtotal menos
  * descuento— alcanza el umbral de la tienda. El resultado cumple por
  * construcción el CHECK `orders_total_matches_breakdown`.
  */

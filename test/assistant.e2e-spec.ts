@@ -110,6 +110,45 @@ describe('Asistente de la tienda (e2e)', () => {
   });
 
   describe('lo que puede consultar', () => {
+    /**
+     * Se escribió después de un fallo real: la herramienta seguía filtrando por
+     * `size` y `color`, relaciones que el modelo nuevo ya no tiene. El
+     * typecheck no lo vio —dentro de un spread condicional, TypeScript no
+     * comprueba propiedades de más— y Prisma solo se quejaba en ejecución, al
+     * preguntarle al asistente por una variación.
+     */
+    it('filtra por una variación concreta sin romperse', async () => {
+      const buscador = new DobleAsistente('buscar_productos', { variacion: 'M' });
+      const propia = await startTestApp({ assistant: buscador });
+
+      try {
+        const producto = await propia.seedProduct(
+          shop,
+          { name: 'Camiseta Asistente', basePrice: 55000, status: 'ACTIVE' },
+          [{ name: 'Talla', values: [{ value: 'M' }, { value: 'L' }] }],
+          4,
+        );
+
+        expect(producto.variants).toHaveLength(2);
+
+        const { status } = await propia.call<Reply>(
+          'POST',
+          `/public/${shop.slug}/assistant`,
+          undefined,
+          { messages: [{ role: 'user', content: '¿tienen M?' }] },
+        );
+
+        expect(status).toBe(201);
+
+        const salida = buscador.ultimo as { productos?: { nombre: string }[]; error?: string };
+
+        expect(salida.error).toBeUndefined();
+        expect(salida.productos?.map((item) => item.nombre)).toContain('Camiseta Asistente');
+      } finally {
+        await propia.close();
+      }
+    });
+
     it('las herramientas solo ven la tienda que pregunta', async () => {
       const otra = await api.register('asistente-otra');
 

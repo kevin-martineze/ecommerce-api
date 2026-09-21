@@ -31,7 +31,9 @@ export class StorefrontContentController {
   }
 
   @Get('collections/:collectionSlug')
-  @ApiOperation({ summary: 'Una colección con sus prendas publicadas y la posición de cada una.' })
+  @ApiOperation({
+    summary: 'Una colección con sus productos publicadas y la posición de cada una.',
+  })
   collection(
     @Param('storeSlug') storeSlug: string,
     @Param('collectionSlug') collectionSlug: string,
@@ -54,7 +56,7 @@ export class StorefrontContentController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @SkipThrottle({ default: false })
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Pide aviso cuando vuelva una talla agotada.' })
+  @ApiOperation({ summary: 'Pide aviso cuando vuelva una variación agotada.' })
   async requestRestock(
     @Param('storeSlug') storeSlug: string,
     @Body() dto: CreateRestockRequestDto,

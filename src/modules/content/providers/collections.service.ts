@@ -27,7 +27,7 @@ type CollectionWithItems = Prisma.CollectionGetPayload<{ include: typeof WITH_IT
 const NOT_FOUND = 'Esa colección no existe.';
 const SLUG_TAKEN = 'Ya existe una colección con ese slug.';
 
-/** Colecciones editoriales: foto de portada y prendas etiquetadas sobre ella. */
+/** Colecciones editoriales: foto de portada y productos etiquetadas sobre ella. */
 @Injectable()
 export class CollectionsService {
   private readonly logger = new Logger(CollectionsService.name);
@@ -178,7 +178,7 @@ export class CollectionsService {
     }
   }
 
-  /** Etiqueta una prenda en la colección, o mueve su punto si ya estaba. */
+  /** Etiqueta un producto en la colección, o mueve su punto si ya estaba. */
   setProduct(
     storeId: string,
     collectionId: string,
@@ -226,7 +226,7 @@ export class CollectionsService {
       });
 
       if (count === 0) {
-        throw new NotFoundException('Esa prenda no está en la colección.');
+        throw new NotFoundException('Ese producto no está en la colección.');
       }
     });
   }

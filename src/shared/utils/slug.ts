@@ -4,7 +4,7 @@
  * `slugify` y `buildSku` reproducen al carácter las del frontend
  * (`tienda-ropa/src/lib/utils/slug.ts`). No es por estética: los productos que
  * ya existen se migran con su slug y su SKU tal cual, y si la API los generara
- * distinto, una prenda editada después de la migración cambiaría de URL o
+ * distinto, un producto editada después de la migración cambiaría de URL o
  * dejaría de parecerse a lo que dicen sus pedidos viejos.
  */
 

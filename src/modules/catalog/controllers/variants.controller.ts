@@ -13,10 +13,10 @@ import {
 import { VariantsService } from '../providers/variants.service';
 
 /**
- * Las variantes se CREAN colgando de su prenda y se EDITAN por su propio id.
+ * Las variantes se CREAN colgando de su producto y se EDITAN por su propio id.
  *
- * Crear exige nombrar la prenda porque la matriz es de una prenda. Editar
- * stock no: la pantalla de inventario cambia variantes de muchas prendas a la
+ * Crear exige nombrar el producto porque la matriz es de un producto. Editar
+ * stock no: la pantalla de inventario cambia variantes de muchas productos a la
  * vez y no tiene por qué cargar con el id de cada una.
  */
 @ApiTags('catálogo')
@@ -26,7 +26,7 @@ export class VariantsController {
   constructor(private readonly variants: VariantsService) {}
 
   @Post('products/:productId/variants')
-  @ApiOperation({ summary: 'Crea las combinaciones color × talla que falten. Nunca borra.' })
+  @ApiOperation({ summary: 'Crea las combinaciones color × variación que falten. Nunca borra.' })
   generate(
     @Param('storeId') storeId: string,
     @Param('productId', ParseUUIDPipe) productId: string,

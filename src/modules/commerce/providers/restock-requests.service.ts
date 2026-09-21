@@ -28,7 +28,7 @@ const WITH_VARIANT = {
 
 type RequestWithVariant = Prisma.RestockRequestGetPayload<{ include: typeof WITH_VARIANT }>;
 
-/** "Avísame cuando vuelva": los contactos que dejan las clientas sobre tallas agotadas. */
+/** "Avísame cuando vuelva": los contactos que dejan las clientas sobre variaciones agotadas. */
 @Injectable()
 export class RestockRequestsService {
   constructor(private readonly prisma: PrismaService) {}

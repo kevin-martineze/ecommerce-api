@@ -4,7 +4,7 @@ import { VariantDto, VariantValueDto } from '@shared/dtos/catalog/variant.dto';
 /**
  * Cómo se lee y se nombra una variante ahora que sus ejes son libres.
  *
- * Antes la variante traía su color y su talla como dos relaciones fijas. Ahora
+ * Antes la variante traía su color y su variación como dos relaciones fijas. Ahora
  * trae N valores, cada uno perteneciente a un eje del producto, y el orden en
  * que se leen lo manda el eje: si el producto declaró Color primero, la
  * variante se llama "Rojo · M" y no "M · Rojo".

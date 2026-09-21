@@ -33,7 +33,7 @@ export class CollectionsController {
   constructor(private readonly collections: CollectionsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Colecciones con sus prendas etiquetadas, incluidas las ocultas.' })
+  @ApiOperation({ summary: 'Colecciones con sus productos etiquetadas, incluidas las ocultas.' })
   list(@Param('storeId') storeId: string): Promise<CollectionAdminDto[]> {
     return this.collections.list(storeId);
   }
@@ -80,7 +80,7 @@ export class CollectionsController {
   }
 
   @Put(':collectionId/products/:productId')
-  @ApiOperation({ summary: 'Etiqueta una prenda en la colección, o mueve su punto.' })
+  @ApiOperation({ summary: 'Etiqueta un producto en la colección, o mueve su punto.' })
   setProduct(
     @Param('storeId') storeId: string,
     @Param('collectionId', ParseUUIDPipe) collectionId: string,
@@ -92,7 +92,7 @@ export class CollectionsController {
 
   @Delete(':collectionId/products/:productId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Quita una prenda de la colección.' })
+  @ApiOperation({ summary: 'Quita un producto de la colección.' })
   async removeProduct(
     @Param('storeId') storeId: string,
     @Param('collectionId', ParseUUIDPipe) collectionId: string,

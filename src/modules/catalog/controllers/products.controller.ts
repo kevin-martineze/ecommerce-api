@@ -29,7 +29,7 @@ export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Prendas de la tienda, las más nuevas primero. Hasta 200.' })
+  @ApiOperation({ summary: 'Productos de la tienda, las más nuevas primero. Hasta 200.' })
   list(
     @Param('storeId') storeId: string,
     @Query() query: ProductListQueryDto,
@@ -38,7 +38,7 @@ export class ProductsController {
   }
 
   @Get(':productId')
-  @ApiOperation({ summary: 'Una prenda con sus fotos y su matriz de variantes.' })
+  @ApiOperation({ summary: 'Un producto con sus fotos y su matriz de variantes.' })
   get(
     @Param('storeId') storeId: string,
     @Param('productId', ParseUUIDPipe) productId: string,
@@ -47,7 +47,7 @@ export class ProductsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Crea una prenda. Sin slug, se deriva del nombre.' })
+  @ApiOperation({ summary: 'Crea un producto. Sin slug, se deriva del nombre.' })
   create(
     @Param('storeId') storeId: string,
     @Body() dto: CreateProductDto,
@@ -56,7 +56,7 @@ export class ProductsController {
   }
 
   @Patch(':productId')
-  @ApiOperation({ summary: 'Cambia los datos de la prenda. Solo lo que viene.' })
+  @ApiOperation({ summary: 'Cambia los datos de el producto. Solo lo que viene.' })
   update(
     @Param('storeId') storeId: string,
     @Param('productId', ParseUUIDPipe) productId: string,
@@ -66,7 +66,7 @@ export class ProductsController {
   }
 
   @Delete(':productId')
-  @ApiOperation({ summary: 'Borra la prenda, o la archiva si ya está en pedidos.' })
+  @ApiOperation({ summary: 'Borra el producto, o la archiva si ya está en pedidos.' })
   remove(
     @Param('storeId') storeId: string,
     @Param('productId', ParseUUIDPipe) productId: string,

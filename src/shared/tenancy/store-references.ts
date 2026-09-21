@@ -69,7 +69,7 @@ export async function assertProductInStore(
   });
 
   if (!product) {
-    throw new BadRequestException('Esa prenda no existe en esta tienda.');
+    throw new BadRequestException('Ese producto no existe en esta tienda.');
   }
 }
 

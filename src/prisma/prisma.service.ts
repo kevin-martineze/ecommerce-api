@@ -152,7 +152,7 @@ export function isRecordNotFound(error: unknown): boolean {
   return prismaCode(error) === PRISMA_ERROR.RECORD_NOT_FOUND;
 }
 
-/** Se intentó borrar algo de lo que todavía cuelgan filas: color en uso, talla en uso. */
+/** Se intentó borrar algo de lo que todavía cuelgan filas: color en uso, variación en uso. */
 export function isForeignKeyViolation(error: unknown): boolean {
   return prismaCode(error) === PRISMA_ERROR.FOREIGN_KEY;
 }

@@ -94,7 +94,7 @@ describe('Pagos de la tienda (e2e)', () => {
     const detalle = await api.seedProduct(
       shop,
       { name: 'Blusa de prueba', basePrice: 90000, status: 'ACTIVE' },
-      [{ name: 'Talla', values: [{ value: 'M' }] }],
+      [{ name: 'Variación', values: [{ value: 'M' }] }],
       5,
     );
 

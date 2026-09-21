@@ -52,7 +52,7 @@ export class CategoriesController {
   }
 
   @Delete(':categoryId')
-  @ApiOperation({ summary: 'Borra la categoría. Sus prendas quedan sin categoría.' })
+  @ApiOperation({ summary: 'Borra la categoría. Sus productos quedan sin categoría.' })
   remove(
     @Param('storeId') storeId: string,
     @Param('categoryId', ParseUUIDPipe) categoryId: string,

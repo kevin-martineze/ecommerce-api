@@ -89,9 +89,9 @@ export class ProductSearchQueryDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Filtra por eje, como `Color:Rojo`. Se repite: ?options=Color:Rojo&options=Talla:M. ' +
+      'Filtra por eje, como `Color:Rojo`. Se repite: ?options=Color:Rojo&options=Variación:M. ' +
       'Varios valores del MISMO eje suman (Rojo o Azul); ejes distintos restringen.',
-    example: ['Color:Rojo', 'Talla:M'],
+    example: ['Color:Rojo', 'Variación:M'],
   })
   @IsOptional()
   @QueryArray()
@@ -191,7 +191,7 @@ export class FacetOptionValueDto {
  * Un eje por el que se puede filtrar el catálogo.
  *
  * Se arma de los productos publicados, no de una lista de la tienda: si nadie
- * vende por talla, el filtro de talla no aparece. Los ejes son por producto,
+ * vende por variación, el filtro de variación no aparece. Los ejes son por producto,
  * así que se agrupan por NOMBRE —el "Color" de una camisa y el de otra son el
  * mismo filtro para quien navega—.
  */
@@ -276,7 +276,7 @@ export class PublicOptionDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty({ example: 'Talla' })
+  @ApiProperty({ example: 'Variación' })
   name!: string;
 
   @ApiProperty()

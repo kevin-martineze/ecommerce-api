@@ -18,22 +18,26 @@ import {
  * podría mirar el catálogo de otra tienda.
  */
 
-/** Cuántas productos se le pasan al modelo por búsqueda. Más es más caro y no responde mejor. */
+/** Cuántos productos se le pasan al modelo por búsqueda. Más es más caro y no responde mejor. */
 const MAX_PRODUCTOS = 5;
 
 export const STORE_TOOLS: AssistantTool[] = [
   {
     name: 'buscar_productos',
     description:
-      'Busca productos activas de la tienda por texto, talla o color. Devuelve nombre, precio, ' +
-      'dirección y qué tallas y colores tienen existencias. Úsala siempre antes de hablar de ' +
-      'una producto, un precio o una talla.',
+      'Busca productos activos de la tienda por texto o por una variación concreta. Devuelve ' +
+      'nombre, precio, dirección y qué variaciones tienen existencias. Úsala siempre antes de ' +
+      'hablar de un producto, un precio o una variación.',
     input: {
       type: 'object',
       properties: {
         texto: { type: 'string', description: 'Palabras de la clienta: «vestido negro», «blusa».' },
-        talla: { type: 'string', description: 'Etiqueta de talla, por ejemplo M o 10.' },
-        color: { type: 'string', description: 'Nombre del color, por ejemplo negro o arena.' },
+        // Un solo campo y no uno por eje: cada producto declara los suyos, así
+        // que la herramienta no puede saber de antemano si existe «variación».
+        variacion: {
+          type: 'string',
+          description: 'Un valor concreto: «M», «Rojo», «500 g», «Fina».',
+        },
       },
     },
   },
@@ -57,7 +61,7 @@ export async function runStoreTool(
   name: string,
   input: unknown,
 ): Promise<unknown> {
-  const args = (input ?? {}) as { texto?: string; talla?: string; color?: string };
+  const args = (input ?? {}) as { texto?: string; variacion?: string };
 
   if (name === 'buscar_productos') return buscarProductos(tx, storeId, args);
   if (name === 'ver_envios') return verEnvios(tx, storeId);
@@ -68,28 +72,33 @@ export async function runStoreTool(
 async function buscarProductos(
   tx: TenantClient,
   storeId: string,
-  args: { texto?: string; talla?: string; color?: string },
+  args: { texto?: string; variacion?: string },
 ) {
   const products = await tx.product.findMany({
     where: {
       storeId,
-      // Lo mismo que ve la vitrina: si una producto se puede abrir en la tienda,
-      // el asistente tiene que poder nombrarla.
+      // Lo mismo que ve la vitrina: si un producto se puede abrir en la tienda,
+      // el asistente tiene que poder nombrarlo.
       status: 'ACTIVE',
       ...(args.texto ? { name: { contains: args.texto, mode: 'insensitive' } } : {}),
-      // La talla y el color se filtran solo si los preguntaron: exigir siempre
-      // una variante escondería las productos que todavía no tienen.
-      ...(args.talla || args.color
+      // La variación se filtra solo si la preguntaron: exigir siempre una
+      // variante escondería los productos que todavía no tienen ninguna.
+      //
+      // Se compara contra el VALOR, sin mirar de qué eje es: la clienta dice
+      // «M» o «Rojo», no «Variación: M». Sin distinguir mayúsculas, porque lo
+      // escribe una persona.
+      ...(args.variacion
         ? {
             variants: {
               some: {
                 active: true,
-                ...(args.talla
-                  ? { size: { label: { equals: args.talla, mode: 'insensitive' } } }
-                  : {}),
-                ...(args.color
-                  ? { color: { name: { contains: args.color, mode: 'insensitive' } } }
-                  : {}),
+                optionValues: {
+                  some: {
+                    value: {
+                      is: { value: { equals: args.variacion, mode: 'insensitive' } },
+                    },
+                  },
+                },
               },
             },
           }

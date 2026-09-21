@@ -6,7 +6,7 @@ export class IncludeHiddenQueryDto {
   @ApiPropertyOptional({
     default: false,
     description:
-      'Incluye los ocultos. La pantalla de catálogos los necesita; el formulario de una prenda, no.',
+      'Incluye los ocultos. La pantalla de catálogos los necesita; el formulario de un producto, no.',
   })
   @IsOptional()
   @QueryBoolean()
@@ -15,7 +15,7 @@ export class IncludeHiddenQueryDto {
 }
 
 /**
- * Resultado de quitar un color, una talla o una categoría.
+ * Resultado de quitar un color, una variación o una categoría.
  *
  * `hidden` en true: la fila seguía en uso y se ocultó en vez de borrarse. El
  * panel lo necesita para decirle a la dueña qué pasó, porque "lo borré" y "lo
