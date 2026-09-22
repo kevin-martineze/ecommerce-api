@@ -11,7 +11,14 @@
  * migración de esquema, y una tienda que quedó con un código retirado sigue
  * abriendo (el frontend cae en la de por defecto).
  */
-export const STOREFRONT_TEMPLATES = ['editorial', 'boutique'] as const;
+export const STOREFRONT_TEMPLATES = [
+  'editorial',
+  'boutique',
+  'galeria',
+  'noche',
+  'vibrante',
+  'atelier',
+] as const;
 
 export type StorefrontTemplate = (typeof STOREFRONT_TEMPLATES)[number];
 
