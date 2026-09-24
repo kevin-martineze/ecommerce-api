@@ -9,6 +9,7 @@ type PaymentsEnv = Pick<
   | 'PAYMENTS_DRIVER'
   | 'FRONTEND_URL'
   | 'WOMPI_CHECKOUT_URL'
+  | 'WOMPI_API_URL'
   | 'WOMPI_PUBLIC_KEY'
   | 'WOMPI_PRIVATE_KEY'
   | 'WOMPI_INTEGRITY_SECRET'
@@ -26,7 +27,7 @@ export function createPaymentGateway(env: PaymentsEnv): PaymentGateway | null {
 
   if (env.PAYMENTS_DRIVER === 'wompi') {
     // La validación del entorno ya exigió estas variables con este driver.
-    return new WompiGateway(env.WOMPI_CHECKOUT_URL, {
+    return new WompiGateway(env.WOMPI_CHECKOUT_URL, env.WOMPI_API_URL, {
       publicKey: env.WOMPI_PUBLIC_KEY ?? '',
       privateKey: env.WOMPI_PRIVATE_KEY ?? '',
       integritySecret: env.WOMPI_INTEGRITY_SECRET ?? '',

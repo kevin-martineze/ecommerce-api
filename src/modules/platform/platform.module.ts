@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PaymentEventsController } from './controllers/payment-events.controller';
 import { PlatformController } from './controllers/platform.controller';
+import { PublicBillingController } from './controllers/public-billing.controller';
 import { PublicPlansController } from './controllers/public-plans.controller';
 import { SubscriptionsController } from './controllers/subscriptions.controller';
 import { PlatformDashboardService } from './providers/platform-dashboard.service';
@@ -20,6 +21,7 @@ import { SubscriptionsService } from './providers/subscriptions.service';
   controllers: [
     PlatformController,
     PublicPlansController,
+    PublicBillingController,
     SubscriptionsController,
     PaymentEventsController,
   ],

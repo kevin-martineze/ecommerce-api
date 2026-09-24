@@ -24,6 +24,12 @@ interface Payment {
   method: string;
 }
 
+interface PaymentMethod {
+  connected: boolean;
+  brand: string | null;
+  last4: string | null;
+}
+
 interface Summary {
   plan: { code: string; priceCop: number };
   status: string;
@@ -31,6 +37,7 @@ interface Summary {
   currentPeriodEnd: string;
   daysLeft: number;
   selfServiceBilling: boolean;
+  paymentMethod: PaymentMethod;
   payments: Payment[];
 }
 
@@ -105,6 +112,72 @@ describe('Pagar el plan (e2e)', () => {
       // Ir a pagar es justo lo que saca a la tienda de ahí.
       expect((await checkout(shop, 'pro')).status).toBe(201);
       expect((await summary(shop)).body.selfServiceBilling).toBe(true);
+    });
+  });
+
+  describe('la tarjeta guardada', () => {
+    // Una sola tienda para los cuatro casos: registrar tiene límite por IP, y
+    // gastarlo acá hace fallar pruebas de más abajo que no tienen la culpa.
+    let tarjeta: Session;
+
+    const guardar = (session: Session, cardToken: string) =>
+      api.call<PaymentMethod & { error?: string }>(
+        'PUT',
+        `/stores/${session.storeId}/subscription/payment-method`,
+        session,
+        { cardToken, acceptanceToken: 'acc_de_prueba' },
+      );
+
+    const olvidar = (session: Session) =>
+      api.call<PaymentMethod>(
+        'DELETE',
+        `/stores/${session.storeId}/subscription/payment-method`,
+        session,
+      );
+
+    beforeAll(async () => {
+      tarjeta = await api.register('pagos-tarjeta');
+    });
+
+    it('se guarda con el token del navegador y se puede decir con qué se cobra', async () => {
+      expect((await summary(tarjeta)).body.paymentMethod.connected).toBe(false);
+
+      const { status, body } = await guardar(tarjeta, 'tok_de_prueba_4242');
+
+      expect(status).toBe(200);
+      expect(body.connected).toBe(true);
+      expect(body.last4).toBe('4242');
+
+      // Y se ve en el resumen, que es de donde lo lee el panel.
+      expect((await summary(tarjeta)).body.paymentMethod).toMatchObject({
+        connected: true,
+        last4: '4242',
+      });
+    });
+
+    it('guardarla no cobra nada: la prueba sigue como estaba', async () => {
+      const antes = (await summary(tarjeta)).body;
+
+      await guardar(tarjeta, 'tok_de_prueba_1111');
+
+      const despues = (await summary(tarjeta)).body;
+
+      expect(despues.currentPeriodEnd).toBe(antes.currentPeriodEnd);
+      expect(despues.payments).toHaveLength(0);
+    });
+
+    it('se puede dejar de cobrar solo', async () => {
+      expect((await olvidar(tarjeta)).body).toEqual({
+        connected: false,
+        brand: null,
+        last4: null,
+      });
+    });
+
+    it('con el plan vencido todavía se puede poner una tarjeta', async () => {
+      await expire(tarjeta, 'PAST_DUE');
+
+      expect((await guardar(tarjeta, 'tok_de_prueba_7777')).status).toBe(200);
     });
   });
 

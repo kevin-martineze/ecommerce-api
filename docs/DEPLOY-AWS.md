@@ -193,7 +193,7 @@ ssh -i ~/.ssh/globerce.pem -L 5433:localhost:5432 ubuntu@<IP>
 # y en otra terminal: psql postgresql://postgres:<clave>@localhost:5433/globerce
 ```
 
-### Las dos tareas diarias
+### Las tareas diarias
 
 Están instaladas en `/etc/cron.d/globerce` y corren de madrugada, hora de
 Colombia:
@@ -201,13 +201,18 @@ Colombia:
 | Hora (UTC) | Qué hace                                                  | Log                               |
 | ---------- | --------------------------------------------------------- | --------------------------------- |
 | 08:10      | `scripts/backup-db.sh`: copia de la base                  | `/var/log/globerce-backup.log`    |
+| 08:30      | `dist/tasks/charge-due`: cobra los planes que vencen hoy  | `/var/log/globerce-charge.log`    |
 | 08:40      | `dist/tasks/reconcile`: marca vencidas pruebas y períodos | `/var/log/globerce-reconcile.log` |
 
-Sin la segunda, una tienda que dejó de pagar se ve al día para siempre: en la
-API no hay reloj, el vencimiento lo marca esta tarea (ver ARCHITECTURE § 13).
+Sin la última, una tienda que dejó de pagar se ve al día para siempre: en la
+API no hay reloj, el vencimiento lo marca esa tarea (ver ARCHITECTURE § 13).
 
-Ninguna de las dos usa `ts-node` ni `dotenv`: la imagen de producción no los
-trae. Las variables llegan del `env_file` de compose.
+El orden entre las dos últimas no es casual: el cobro va ANTES. Si cobra bien,
+la tienda no llega a marcarse como vencida ese mismo día; al revés, la dueña
+vería un aviso de pago vencido por una tarjeta que sí funcionó.
+
+Ninguna usa `ts-node` ni `dotenv`: la imagen de producción no los trae. Las
+variables llegan del `env_file` de compose.
 
 ### Respaldos
 

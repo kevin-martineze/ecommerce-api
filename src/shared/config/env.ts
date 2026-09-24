@@ -139,6 +139,13 @@ const envSchema = z.object({
   WOMPI_CHECKOUT_URL: z.string().url().default('https://checkout.wompi.co/p/'),
 
   /**
+   * La API de Wompi, que es otra cosa que su checkout: por acá se guardan las
+   * tarjetas y se cobran las suscripciones sin nadie delante. En pruebas es
+   * `https://sandbox.wompi.co/v1`.
+   */
+  WOMPI_API_URL: z.string().url().default('https://production.wompi.co/v1'),
+
+  /**
    * Las llaves de la PLATAFORMA: con ellas se cobra la mensualidad de las
    * tiendas. Las de cada tienda, con las que cobra sus propios pedidos, viven
    * cifradas en la base y no acá.

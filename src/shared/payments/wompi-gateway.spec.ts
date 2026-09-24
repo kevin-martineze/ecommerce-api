@@ -16,7 +16,11 @@ const keys: GatewayCredentials = {
   eventsSecret: 'secreto-de-eventos',
 };
 
-const gateway = new WompiGateway('https://checkout.wompi.co/p/', keys);
+const gateway = new WompiGateway(
+  'https://checkout.wompi.co/p/',
+  'https://sandbox.wompi.co/v1',
+  keys,
+);
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -45,6 +49,27 @@ function evento(overrides: { status?: string; cents?: number; checksum?: string 
   };
 }
 
+/** Finge la API de Wompi y deja ver con qué se la llamó. */
+function fingirApi(respuesta: unknown, status = 200) {
+  const llamadas: { url: string; init?: RequestInit }[] = [];
+
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    llamadas.push({ url, init });
+
+    return Promise.resolve({
+      ok: status < 400,
+      status,
+      text: () => Promise.resolve(JSON.stringify(respuesta)),
+    } as Response);
+  }) as typeof fetch;
+
+  return {
+    llamadas,
+    cuerpo: (indice = 0): Record<string, unknown> =>
+      JSON.parse(String(llamadas[indice]?.init?.body ?? '{}')) as Record<string, unknown>,
+  };
+}
+
 describe('WompiGateway', () => {
   describe('el enlace de pago', () => {
     it('va firmado, para que el monto no se pueda cambiar en la URL', () => {
@@ -64,6 +89,87 @@ describe('WompiGateway', () => {
       expect(params.get('signature:integrity')).toBe(
         sha256(`sub-abc9900000COP${keys.integritySecret}`),
       );
+    });
+  });
+
+  describe('la tarjeta guardada', () => {
+    const originalFetch = globalThis.fetch;
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it('se guarda con el token del navegador, nunca con la tarjeta', async () => {
+      const api = fingirApi({
+        data: { id: 1234, public_data: { brand: 'VISA', last_four: '4242' } },
+      });
+
+      const source = await gateway.createPaymentSource({
+        cardToken: 'tok_test_123',
+        acceptanceToken: 'acc_test_123',
+        customerEmail: 'maria@correo.com',
+      });
+
+      expect(source).toEqual({ id: '1234', brand: 'VISA', last4: '4242' });
+      expect(api.cuerpo()).toEqual({
+        type: 'CARD',
+        token: 'tok_test_123',
+        customer_email: 'maria@correo.com',
+        acceptance_token: 'acc_test_123',
+      });
+      // La llave privada nunca sale del servidor, pero sí tiene que ir acá.
+      expect(api.llamadas[0]?.init?.headers).toMatchObject({
+        authorization: `Bearer ${keys.privateKey}`,
+      });
+    });
+
+    it('el cobro va firmado, igual que el enlace de pago', async () => {
+      fingirApi({ data: { id: 'trx-9', status: 'APPROVED', amount_in_cents: 9_900_000 } });
+
+      const event = await gateway.charge({
+        reference: 'sub-abc',
+        amountCop: 99_000,
+        description: 'Plan Pro',
+        customerEmail: 'maria@correo.com',
+        paymentSourceId: '1234',
+      });
+
+      expect(event.status).toBe('approved');
+      expect(event.amountCop).toBe(99_000);
+    });
+
+    it('el cobro se anuncia como iniciado por el comercio', async () => {
+      const api = fingirApi({ data: { id: 'trx-9', status: 'APPROVED' } });
+
+      await gateway.charge({
+        reference: 'sub-abc',
+        amountCop: 99_000,
+        description: 'Plan Pro',
+        customerEmail: 'maria@correo.com',
+        paymentSourceId: '1234',
+      });
+
+      // Sin `recurrent` el banco rechaza un cobro que llega sin nadie delante.
+      expect(api.cuerpo()).toMatchObject({
+        recurrent: true,
+        payment_source_id: 1234,
+        amount_in_cents: 9_900_000,
+        signature: sha256(`sub-abc9900000COP${keys.integritySecret}`),
+      });
+    });
+
+    it('un rechazo de la API no se confunde con un cobro hecho', async () => {
+      fingirApi({ error: { reason: 'tarjeta vencida' } }, 422);
+
+      await expect(
+        gateway.charge({
+          reference: 'sub-abc',
+          amountCop: 99_000,
+          description: 'Plan Pro',
+          customerEmail: 'maria@correo.com',
+          paymentSourceId: '1234',
+        }),
+      ).rejects.toThrow('422');
     });
   });
 
