@@ -25,6 +25,7 @@ import { PaymentGateway } from './gateway';
           PAYMENTS_DRIVER: config.get('PAYMENTS_DRIVER', { infer: true }),
           FRONTEND_URL: config.get('FRONTEND_URL', { infer: true }),
           WOMPI_CHECKOUT_URL: config.get('WOMPI_CHECKOUT_URL', { infer: true }),
+          WOMPI_API_URL: config.get('WOMPI_API_URL', { infer: true }),
           WOMPI_PUBLIC_KEY: config.get('WOMPI_PUBLIC_KEY', { infer: true }),
           WOMPI_PRIVATE_KEY: config.get('WOMPI_PRIVATE_KEY', { infer: true }),
           WOMPI_INTEGRITY_SECRET: config.get('WOMPI_INTEGRITY_SECRET', { infer: true }),

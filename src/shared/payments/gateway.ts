@@ -36,6 +36,44 @@ export interface CheckoutSession {
   reference: string;
 }
 
+/**
+ * Lo que el navegador necesita para convertir una tarjeta en un token.
+ *
+ * La tarjeta NO pasa por nuestro servidor en ningún momento: el navegador se
+ * la da a la pasarela con la llave pública y recibe un token de un solo uso.
+ * Lo único que viaja hacia acá es ese token.
+ */
+export interface SetupInfo {
+  publicKey: string;
+  /** Los términos de la pasarela, ya firmados por ella. Hay que aceptarlos. */
+  acceptanceToken: string;
+  /** Dónde se leen esos términos. Se enlaza junto a la casilla. */
+  termsUrl: string;
+}
+
+export interface PaymentSourceInput {
+  /** El token de la tarjeta, hecho en el navegador. Dura poco y sirve una vez. */
+  cardToken: string;
+  acceptanceToken: string;
+  customerEmail: string;
+}
+
+/** Un medio de pago guardado en la pasarela. Acá solo vive su identificador. */
+export interface PaymentSource {
+  id: string;
+  /** `VISA`, `MASTERCARD`… para poder decir con qué se va a cobrar. */
+  brand: string | null;
+  last4: string | null;
+}
+
+export interface ChargeInput {
+  reference: string;
+  amountCop: number;
+  description: string;
+  customerEmail: string;
+  paymentSourceId: string;
+}
+
 export type PaymentStatus = 'approved' | 'declined' | 'pending';
 
 export interface PaymentEvent {
@@ -54,7 +92,33 @@ export abstract class PaymentGateway {
   /** Si la plataforma tiene con qué cobrar. */
   abstract readonly available: boolean;
 
+  /**
+   * Si se le puede guardar un medio de pago y cobrar sin nadie delante.
+   *
+   * No todas pueden, y no todos los medios se dejan guardar: PSE es de un solo
+   * uso por diseño —cada pago exige volver al banco—, así que una suscripción
+   * que se cobre sola es, hoy, tarjeta.
+   */
+  abstract readonly supportsRecurring: boolean;
+
   abstract checkout(input: CheckoutInput, credentials?: GatewayCredentials): CheckoutSession;
+
+  /** Lo que el navegador necesita para tokenizar una tarjeta. */
+  abstract setup(credentials?: GatewayCredentials): Promise<SetupInfo>;
+
+  /** Guarda el medio de pago en la pasarela y devuelve con qué quedó. */
+  abstract createPaymentSource(
+    input: PaymentSourceInput,
+    credentials?: GatewayCredentials,
+  ): Promise<PaymentSource>;
+
+  /**
+   * Cobra contra un medio ya guardado, sin nadie delante.
+   *
+   * Devuelve lo mismo que un evento, para que quien aplica el pago no tenga
+   * que distinguir si lo cobró un cron o lo pagó alguien en la pasarela.
+   */
+  abstract charge(input: ChargeInput, credentials?: GatewayCredentials): Promise<PaymentEvent>;
 
   /**
    * Comprueba la firma del evento y lo traduce. `null` si la firma no cuadra:

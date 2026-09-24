@@ -1,4 +1,13 @@
-import { CheckoutInput, CheckoutSession, PaymentEvent, PaymentGateway } from './gateway';
+import {
+  ChargeInput,
+  CheckoutInput,
+  CheckoutSession,
+  PaymentEvent,
+  PaymentGateway,
+  PaymentSource,
+  PaymentSourceInput,
+  SetupInfo,
+} from './gateway';
 
 /**
  * La pasarela de mentira, para desarrollo y demostraciones.
@@ -15,6 +24,7 @@ import { CheckoutInput, CheckoutSession, PaymentEvent, PaymentGateway } from './
 export class SimulatedGateway extends PaymentGateway {
   readonly name = 'simulado';
   readonly available = true;
+  readonly supportsRecurring = true;
 
   constructor(private readonly frontendUrl: string) {
     super();
@@ -29,6 +39,38 @@ export class SimulatedGateway extends PaymentGateway {
     url.searchParams.set('volver', input.redirectUrl);
 
     return { url: url.toString(), reference: input.reference };
+  }
+
+  /**
+   * No hay pasarela a la que pedirle nada: la llave y el token son de mentira
+   * y el navegador los reconoce como tales para no llamar a Wompi.
+   */
+  setup(): Promise<SetupInfo> {
+    return Promise.resolve({
+      publicKey: 'pub_simulado',
+      acceptanceToken: 'simulado',
+      termsUrl: new URL('/legales/terminos', this.frontendUrl).toString(),
+    });
+  }
+
+  /** Guarda una tarjeta que no existe. Los últimos cuatro salen del token. */
+  createPaymentSource(input: PaymentSourceInput): Promise<PaymentSource> {
+    return Promise.resolve({
+      id: `sim-${input.cardToken.slice(-8)}`,
+      brand: 'SIMULADA',
+      last4: input.cardToken.slice(-4),
+    });
+  }
+
+  /** Cobra siempre bien: para probar lo que pasa DESPUÉS de un cobro. */
+  charge(input: ChargeInput): Promise<PaymentEvent> {
+    return Promise.resolve({
+      reference: input.reference,
+      transactionId: `sim-${input.reference}`,
+      status: 'approved',
+      amountCop: input.amountCop,
+      method: this.name,
+    });
   }
 
   /**
