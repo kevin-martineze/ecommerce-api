@@ -20,6 +20,19 @@ const envSchema = z.object({
   API_PREFIX: z.string().min(1).default('v1'),
 
   /**
+   * Si se publica la documentación (`/<prefijo>/docs`).
+   *
+   * Fuera de producción se monta siempre. En producción es una decisión: el
+   * Swagger enumera cada ruta, cada campo y cada validación de la API, que es
+   * exactamente el mapa que busca quien quiere atacarla. Se enciende a
+   * propósito y se apaga cuando deje de hacer falta.
+   */
+  DOCS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((valor) => valor === 'true'),
+
+  /**
    * Conexión de runtime. Debe apuntar al rol restringido (`tienda_app`), no al
    * dueño de las tablas: el dueño se salta RLS y dejaría la defensa en
    * profundidad multi-tienda como decoración. Ver docker/postgres-init/01-roles.sql.
