@@ -165,7 +165,13 @@ export class SubscriptionsService {
    */
   async billingSetup(): Promise<BillingSetupDto> {
     const gateway = this.gateway;
-    const vacio = { available: false, publicKey: '', acceptanceToken: '', termsUrl: '' };
+    const vacio = {
+      available: false,
+      publicKey: '',
+      apiUrl: '',
+      acceptanceToken: '',
+      termsUrl: '',
+    };
 
     if (!gateway?.supportsRecurring) return vacio;
 

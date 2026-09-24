@@ -117,6 +117,7 @@ export class WompiGateway extends PaymentGateway {
 
     return {
       publicKey: keys.publicKey,
+      apiUrl: this.apiUrl,
       acceptanceToken: acceptance.acceptance_token,
       termsUrl: acceptance.permalink ?? '',
     };

@@ -48,6 +48,8 @@ export class SimulatedGateway extends PaymentGateway {
   setup(): Promise<SetupInfo> {
     return Promise.resolve({
       publicKey: 'pub_simulado',
+      // Vacío a propósito: el navegador lo reconoce y no llama a nadie.
+      apiUrl: '',
       acceptanceToken: 'simulado',
       termsUrl: new URL('/legales/terminos', this.frontendUrl).toString(),
     });

@@ -99,6 +99,11 @@ export class BillingSetupDto {
   @ApiProperty({ description: 'La llave con que el navegador tokeniza la tarjeta. Es pública.' })
   publicKey!: string;
 
+  @ApiProperty({
+    description: 'Contra dónde tokeniza el navegador. Vacío con la pasarela simulada.',
+  })
+  apiUrl!: string;
+
   @ApiProperty({ description: 'Los términos de la pasarela, firmados por ella. Caduca.' })
   acceptanceToken!: string;
 

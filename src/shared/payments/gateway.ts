@@ -45,6 +45,8 @@ export interface CheckoutSession {
  */
 export interface SetupInfo {
   publicKey: string;
+  /** Contra dónde tokeniza el navegador. Cambia entre pruebas y producción. */
+  apiUrl: string;
   /** Los términos de la pasarela, ya firmados por ella. Hay que aceptarlos. */
   acceptanceToken: string;
   /** Dónde se leen esos términos. Se enlaza junto a la casilla. */
