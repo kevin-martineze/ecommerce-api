@@ -31,6 +31,7 @@
     "db:import-supabase-media": "ts-node --transpile-only scripts/import-supabase-media.ts",
     "platform:grant-admin": "ts-node --transpile-only scripts/grant-platform-admin.ts",
     "platform:reconcile": "ts-node --transpile-only -r tsconfig-paths/register src/tasks/reconcile.ts",
+    "platform:charge-due": "ts-node --transpile-only -r tsconfig-paths/register src/tasks/charge-due.ts",
     "storage:check": "ts-node --transpile-only -r tsconfig-paths/register scripts/check-storage.ts",
     "storage:push-local": "ts-node --transpile-only -r tsconfig-paths/register scripts/push-local-media.ts"
   },

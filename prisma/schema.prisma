@@ -432,6 +432,18 @@ model Subscription {
   /// Hasta cuándo está pago. Registrar un pago la extiende.
   currentPeriodEnd DateTime @map("current_period_end") @db.Date
 
+  /// El medio de pago guardado en la pasarela, para cobrar sin nadie delante.
+  /// Acá vive su identificador y nada más: la tarjeta no pasa por este lado.
+  paymentSourceId String? @map("payment_source_id")
+  /// Con qué se cobra, para poder decirlo sin preguntarle a la pasarela.
+  paymentBrand    String? @map("payment_brand")
+  paymentLast4    String? @map("payment_last4")
+
+  /// Cuántos cobros automáticos seguidos fallaron. Un cobro bueno la vuelve a cero.
+  chargeFailures Int       @default(0) @map("charge_failures")
+  /// Cuándo se intentó el último, para no repetirlo el mismo día.
+  lastChargeAt   DateTime? @map("last_charge_at")
+
   notes String?
 
   createdAt DateTime @default(now()) @map("created_at")

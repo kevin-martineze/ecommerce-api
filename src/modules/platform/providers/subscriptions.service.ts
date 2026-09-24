@@ -13,7 +13,10 @@ import { Payment, Plan, StoreStatus } from '@prisma/client';
 import { Env } from '@shared/config/env';
 import { PaymentEvent, PaymentGateway } from '@shared/payments/gateway';
 import {
+  BillingSetupDto,
+  PaymentMethodDto,
   PlanDto,
+  SavePaymentMethodDto,
   SubscriptionCheckoutDto,
   SubscriptionPaymentDto,
   SubscriptionSummaryDto,
@@ -31,6 +34,13 @@ const PAYMENTS_SHOWN = 12;
 
 /** Lo que antecede a la referencia del cobro de un plan. */
 const SUB_PREFIX = 'sub';
+
+/**
+ * Cuántos cobros automáticos seguidos pueden fallar antes de dejar de
+ * intentarlo. Reintentar para siempre contra una tarjeta cancelada no cobra
+ * nada y sí puede costar comisiones y marcar al comercio ante la red.
+ */
+const MAX_CHARGE_FAILURES = 3;
 
 /**
  * El plan visto desde la tienda: qué tiene, cuánto lleva usado y cómo se paga.
@@ -94,6 +104,7 @@ export class SubscriptionsService {
         daysLeft: daysUntil(subscription.currentPeriodEnd),
         usage: { products, ordersThisMonth },
         selfServiceBilling: this.selfService,
+        paymentMethod: toPaymentMethodDto(subscription),
         payments: payments.map(toPaymentDto),
       };
     });
@@ -140,6 +151,242 @@ export class SubscriptionsService {
     this.logger.log(`Cobro del plan ${plan.code} iniciado para la tienda ${storeId}`);
 
     return { url: session.url, reference: session.reference, amountCop: plan.priceCop };
+  }
+
+  /**
+   * Lo que el navegador necesita para guardar una tarjeta.
+   *
+   * Sin sesión: se pide mientras se está creando la tienda, cuando todavía no
+   * hay ninguna. Lo que devuelve es público —la llave pública y los términos
+   * de la pasarela—, y sin ello el navegador no puede tokenizar nada.
+   *
+   * Si la pasarela no responde, se devuelve `available: false` en vez de un
+   * error: no poder guardar una tarjeta no puede impedir abrir una tienda.
+   */
+  async billingSetup(): Promise<BillingSetupDto> {
+    const gateway = this.gateway;
+    const vacio = { available: false, publicKey: '', acceptanceToken: '', termsUrl: '' };
+
+    if (!gateway?.supportsRecurring) return vacio;
+
+    try {
+      return { available: true, ...(await gateway.setup()) };
+    } catch (error: unknown) {
+      this.logger.error(`No se pudo preparar el cobro recurrente: ${String(error)}`);
+
+      return vacio;
+    }
+  }
+
+  /** Con qué se le cobra hoy el plan a una tienda. */
+  async paymentMethod(storeId: string): Promise<PaymentMethodDto> {
+    const subscription = await this.prisma.forStore(storeId, (tx) =>
+      tx.subscription.findUnique({
+        where: { storeId },
+        select: { paymentSourceId: true, paymentBrand: true, paymentLast4: true },
+      }),
+    );
+
+    return toPaymentMethodDto(subscription);
+  }
+
+  /**
+   * Guarda la tarjeta con que se cobrará el plan.
+   *
+   * Lo que llega es un token de un solo uso hecho en el navegador, nunca la
+   * tarjeta: acá se cambia por una fuente de pago en la pasarela y lo único
+   * que se guarda es su identificador, la marca y los cuatro últimos.
+   *
+   * Guardar una tarjeta NO cobra nada. El primer cobro es el día que termina
+   * la prueba, y lo hace la tarea diaria.
+   */
+  async savePaymentMethod(storeId: string, input: SavePaymentMethodDto): Promise<PaymentMethodDto> {
+    const gateway = this.gateway;
+
+    if (!gateway?.supportsRecurring) {
+      throw new BadRequestException('Todavía no podemos guardar tarjetas. Inténtalo más tarde.');
+    }
+
+    await this.storeForPayment(storeId);
+
+    const source = await gateway.createPaymentSource({
+      cardToken: input.cardToken,
+      acceptanceToken: input.acceptanceToken,
+      customerEmail: await this.billingEmail(storeId),
+    });
+
+    await this.prisma.forStore(storeId, (tx) =>
+      tx.subscription.updateMany({
+        where: { storeId },
+        data: {
+          paymentSourceId: source.id,
+          paymentBrand: source.brand,
+          paymentLast4: source.last4,
+          // Una tarjeta nueva empieza sin deudas: los fallos eran de la vieja.
+          chargeFailures: 0,
+        },
+      }),
+    );
+
+    this.logger.log(`Tarjeta guardada para la tienda ${storeId}`);
+
+    return { connected: true, brand: source.brand, last4: source.last4 };
+  }
+
+  /**
+   * Deja de cobrar solo. La tienda sigue viva hasta que termine lo pagado.
+   *
+   * No se borra nada en la pasarela: la fuente de pago se queda allá, y lo que
+   * se suelta es el hilo que la une a esta tienda.
+   */
+  async removePaymentMethod(storeId: string): Promise<PaymentMethodDto> {
+    await this.prisma.forStore(storeId, (tx) =>
+      tx.subscription.updateMany({
+        where: { storeId },
+        data: {
+          paymentSourceId: null,
+          paymentBrand: null,
+          paymentLast4: null,
+          chargeFailures: 0,
+        },
+      }),
+    );
+
+    this.logger.log(`La tienda ${storeId} dejó de cobrarse sola`);
+
+    return { connected: false, brand: null, last4: null };
+  }
+
+  /**
+   * Cobra las suscripciones que vencen, contra la tarjeta guardada.
+   *
+   * La llama el cron diario. Es lo que convierte esto en una suscripción de
+   * verdad: nadie tiene que acordarse de pagar. Para una tienda en prueba, el
+   * período que termina es la prueba, así que este es el primer cobro.
+   *
+   * Cuatro razones para saltarse una tienda, y todas importan:
+   *
+   * - No tiene tarjeta: paga a mano, como siempre.
+   * - Todavía no vence: cobrar antes es cobrar de más.
+   * - Ya se intentó hoy: sin esto, dos corridas del cron cobran dos veces.
+   * - Lleva tres fallos: la tarjeta no sirve y reintentarla no la arregla.
+   */
+  async chargeDue(now: Date = new Date()): Promise<{ charged: number; failed: number }> {
+    const gateway = this.gateway;
+
+    if (!gateway?.supportsRecurring) return { charged: 0, failed: 0 };
+
+    const today = startOfDay(now);
+    const stores = await this.prisma.store.findMany({
+      where: { status: { in: ['TRIAL', 'ACTIVE', 'PAST_DUE'] } },
+      select: { id: true, name: true },
+    });
+
+    let charged = 0;
+    let failed = 0;
+
+    for (const store of stores) {
+      const subscription = await this.prisma.forStore(store.id, (tx) =>
+        tx.subscription.findUnique({ where: { storeId: store.id }, include: { plan: true } }),
+      );
+
+      if (!subscription?.paymentSourceId) continue;
+      if (subscription.status === 'CANCELLED') continue;
+      if (subscription.currentPeriodEnd > today) continue;
+      if (subscription.chargeFailures >= MAX_CHARGE_FAILURES) continue;
+      if (subscription.lastChargeAt && startOfDay(subscription.lastChargeAt) >= today) continue;
+
+      const resultado = await this.chargeOne(store, subscription, subscription.plan);
+
+      if (resultado === 'charged') charged += 1;
+      if (resultado === 'failed') failed += 1;
+    }
+
+    return { charged, failed };
+  }
+
+  /**
+   * Un cobro. Devuelve qué pasó para que quien lleva la cuenta no interprete.
+   *
+   * `pending` no es un fallo: la pasarela todavía no sabe, y lo resolverá su
+   * evento firmado. Contarlo como fallo gastaría uno de los tres intentos por
+   * algo que quizá salió bien.
+   */
+  private async chargeOne(
+    store: { id: string; name: string },
+    subscription: { planCode: string; paymentSourceId: string | null },
+    plan: Plan,
+  ): Promise<'charged' | 'failed' | 'pending'> {
+    const gateway = this.gateway;
+    const sourceId = subscription.paymentSourceId;
+
+    if (!gateway || !sourceId) return 'failed';
+
+    const reference = `${SUB_PREFIX}-${store.id}-${plan.code}-${randomUUID().slice(0, 8)}`;
+
+    try {
+      const event = await gateway.charge({
+        reference,
+        amountCop: plan.priceCop,
+        description: `Globerce · plan ${plan.name} · ${store.name}`,
+        customerEmail: await this.billingEmail(store.id),
+        paymentSourceId: sourceId,
+      });
+
+      if (event.status === 'approved') {
+        await this.applyPayment(event);
+        await this.recordCharge(store.id, { failures: 0 });
+
+        this.logger.log(`Plan ${plan.code} cobrado a la tienda ${store.id}`);
+
+        return 'charged';
+      }
+
+      await this.recordCharge(store.id, event.status === 'pending' ? {} : { increment: true });
+
+      if (event.status === 'pending') return 'pending';
+
+      this.logger.warn(`El cobro del plan de la tienda ${store.id} fue rechazado.`);
+
+      return 'failed';
+    } catch (error: unknown) {
+      await this.recordCharge(store.id, { increment: true });
+      this.logger.error(`No se pudo cobrar el plan de la tienda ${store.id}: ${String(error)}`);
+
+      return 'failed';
+    }
+  }
+
+  /** Deja constancia del intento: sin esto, el cron cobraría otra vez mañana y hoy. */
+  private async recordCharge(
+    storeId: string,
+    outcome: { failures?: number; increment?: boolean },
+  ): Promise<void> {
+    await this.prisma.forStore(storeId, (tx) =>
+      tx.subscription.updateMany({
+        where: { storeId },
+        data: {
+          lastChargeAt: new Date(),
+          ...(outcome.increment ? { chargeFailures: { increment: 1 } } : {}),
+          ...(outcome.failures !== undefined ? { chargeFailures: outcome.failures } : {}),
+        },
+      }),
+    );
+  }
+
+  /** El correo de la dueña: es quien paga, y la pasarela lo exige en cada cobro. */
+  private async billingEmail(storeId: string): Promise<string> {
+    const member = await this.prisma.storeMember.findFirst({
+      where: { storeId, role: 'OWNER' },
+      orderBy: { createdAt: 'asc' },
+      select: { user: { select: { email: true } } },
+    });
+
+    if (!member) {
+      throw new NotFoundException('La tienda no tiene dueña a quien cobrarle.');
+    }
+
+    return member.user.email;
   }
 
   /**
@@ -302,6 +549,21 @@ export function toPlanDto(plan: Plan): PlanDto {
     customDomain: plan.customDomain,
     aiRepliesPerMonth: plan.aiRepliesPerMonth,
     active: plan.active,
+  };
+}
+
+/** Con qué se cobra, sin exponer nunca más que la marca y los cuatro últimos. */
+function toPaymentMethodDto(
+  subscription: {
+    paymentSourceId: string | null;
+    paymentBrand: string | null;
+    paymentLast4: string | null;
+  } | null,
+): PaymentMethodDto {
+  return {
+    connected: Boolean(subscription?.paymentSourceId),
+    brand: subscription?.paymentBrand ?? null,
+    last4: subscription?.paymentLast4 ?? null,
   };
 }
 

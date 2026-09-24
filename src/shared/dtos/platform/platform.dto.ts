@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   Matches,
   Max,
   MaxLength,
@@ -91,6 +92,31 @@ export class SubscriptionPaymentDto {
   createdAt!: Date;
 }
 
+export class BillingSetupDto {
+  @ApiProperty({ description: 'Si hoy se puede guardar una tarjeta. Con `false` no se ofrece.' })
+  available!: boolean;
+
+  @ApiProperty({ description: 'La llave con que el navegador tokeniza la tarjeta. Es pública.' })
+  publicKey!: string;
+
+  @ApiProperty({ description: 'Los términos de la pasarela, firmados por ella. Caduca.' })
+  acceptanceToken!: string;
+
+  @ApiProperty({ description: 'Dónde se leen esos términos.' })
+  termsUrl!: string;
+}
+
+export class PaymentMethodDto {
+  @ApiProperty({ description: 'Si hay una tarjeta guardada con que cobrar el plan.' })
+  connected!: boolean;
+
+  @ApiProperty({ nullable: true, example: 'VISA' })
+  brand!: string | null;
+
+  @ApiProperty({ nullable: true, example: '4242', description: 'Los cuatro últimos, nada más.' })
+  last4!: string | null;
+}
+
 export class SubscriptionSummaryDto {
   @ApiProperty({ type: PlanDto })
   plan!: PlanDto;
@@ -117,6 +143,9 @@ export class SubscriptionSummaryDto {
     description: 'Si la tienda puede activar su plan sola (hay pasarela, aunque sea simulada).',
   })
   selfServiceBilling!: boolean;
+
+  @ApiProperty({ type: PaymentMethodDto, description: 'Con qué se cobra el plan, si hay algo.' })
+  paymentMethod!: PaymentMethodDto;
 
   @ApiProperty({ type: [SubscriptionPaymentDto], description: 'Sus pagos, el más nuevo primero.' })
   payments!: SubscriptionPaymentDto[];
@@ -432,6 +461,23 @@ export class MonthPaymentsDto {
 // ---------------------------------------------------------------------------
 // Lo que la tienda hace con su plan
 // ---------------------------------------------------------------------------
+
+export class SavePaymentMethodDto {
+  @ApiProperty({
+    description:
+      'El token de la tarjeta, hecho en el navegador con la llave pública. La tarjeta no llega acá.',
+  })
+  @Trim()
+  @IsString()
+  @Length(8, 200, { message: 'El token de la tarjeta no es válido.' })
+  cardToken!: string;
+
+  @ApiProperty({ description: 'El token de aceptación de los términos de la pasarela.' })
+  @Trim()
+  @IsString()
+  @Length(4, 5000, { message: 'Falta aceptar los términos de la pasarela.' })
+  acceptanceToken!: string;
+}
 
 export class ActivatePlanDto {
   @ApiProperty({ example: 'pro', description: 'Plan que se activa y se cobra.' })

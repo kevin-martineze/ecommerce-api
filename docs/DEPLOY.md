@@ -5,15 +5,16 @@ porqué de cada pieza está en `ARCHITECTURE.md`; esto es la lista de pasos.
 
 Piezas:
 
-| Pieza          | Servicio elegido        | Variables                                   |
-| -------------- | ----------------------- | ------------------------------------------- |
-| Base de datos  | Postgres gestionado     | `DATABASE_URL`, `DIRECT_URL`                |
-| Fotos          | Cloudflare R2           | `STORAGE_DRIVER=s3`, `S3_*`                 |
-| Correo         | cualquier SMTP          | `MAIL_DRIVER=smtp`, `SMTP_URL`, `MAIL_FROM` |
-| Cobro          | por ahora, a mano       | `BILLING_DRIVER=manual` (ver ARCHITECTURE)  |
-| API            | un servidor Node 22     | todo lo de `.env.example`                   |
-| Tienda y panel | Vercel (`shopping-sas`) | ver su `.env.example`                       |
-| Vencimientos   | cron del servidor       | `pnpm platform:reconcile` una vez al día    |
+| Pieza          | Servicio elegido        | Variables                                      |
+| -------------- | ----------------------- | ---------------------------------------------- |
+| Base de datos  | Postgres gestionado     | `DATABASE_URL`, `DIRECT_URL`                   |
+| Fotos          | Cloudflare R2           | `STORAGE_DRIVER=s3`, `S3_*`                    |
+| Correo         | cualquier SMTP          | `MAIL_DRIVER=smtp`, `SMTP_URL`, `MAIL_FROM`    |
+| Cobro          | por ahora, a mano       | `BILLING_DRIVER=manual` (ver ARCHITECTURE)     |
+| API            | un servidor Node 22     | todo lo de `.env.example`                      |
+| Tienda y panel | Vercel (`shopping-sas`) | ver su `.env.example`                          |
+| Vencimientos   | cron del servidor       | `pnpm platform:reconcile` una vez al día       |
+| Cobro del plan | cron del servidor       | `pnpm platform:charge-due`, antes del anterior |
 
 ---
 
@@ -164,6 +165,6 @@ Cloudflare para `media.globerce.com`. Opciones:
   una red privada o de un secreto compartido (ARCHITECTURE § 3).
 - **`FRONTEND_URL`** con el dominio real: es la base de los enlaces de los
   correos.
-- **Cron diario:** `pnpm platform:reconcile`.
+- **Cron diario:** `pnpm platform:charge-due` y después `pnpm platform:reconcile`.
 - **Frontend en Vercel:** `API_URL`, `SESSION_SECRET`, `PUBLIC_SITE_URL`,
   `STORE_ROOT_DOMAIN` y, si el dominio raíz muestra una tienda, `STORE_SLUG`.
