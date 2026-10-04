@@ -191,6 +191,11 @@ model StoreSettings {
   /// códigos válidos están en `src/shared/content/templates.ts`.
   template String @default("editorial")
 
+  /// Lo que la dueña le ajusta a su plantilla: color, letras, esquinas y
+  /// portada. Null es la plantilla tal cual; se lee con `readTheme`
+  /// (`src/shared/content/theme.ts`), que descarta lo que no reconozca.
+  theme Json?
+
   updatedAt DateTime @updatedAt @map("updated_at")
 
   store          Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)

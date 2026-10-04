@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { STOREFRONT_TEMPLATES } from '@shared/content/templates';
+import { StoreThemeDto } from '@shared/dtos/content/settings.dto';
 import { FacetCategoryDto, ProductCardDto } from '@shared/dtos/storefront/product.dto';
 import { Trim } from '@shared/dtos/transforms';
 
@@ -39,6 +40,9 @@ export class PublicSettingsDto {
 
   @ApiProperty({ enum: STOREFRONT_TEMPLATES, description: 'Con qué diseño se pinta la vitrina.' })
   template!: string;
+
+  @ApiProperty({ type: StoreThemeDto, description: 'Lo que la tienda le ajusta a su plantilla.' })
+  theme!: StoreThemeDto;
 
   @ApiProperty({
     description: 'Si esta tienda ofrece asistente: lo decide su plan y la plataforma.',
