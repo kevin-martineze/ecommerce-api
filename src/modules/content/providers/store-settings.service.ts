@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { StoreSettings } from '@prisma/client';
+import { Prisma, StoreSettings } from '@prisma/client';
 import { Assistant } from '@shared/ai/assistant';
-import { StoreSettingsDto, UpdateStoreSettingsDto } from '@shared/dtos/content/settings.dto';
+import { isEmptyTheme, readTheme } from '@shared/content/theme';
+import {
+  StoreSettingsDto,
+  UpdateStoreSettingsDto,
+  UpdateStoreThemeDto,
+} from '@shared/dtos/content/settings.dto';
 import { assertCollectionInStore } from '@shared/tenancy/store-references';
 import { blankToNull } from '@shared/utils/text';
 import { PrismaService, TenantClient } from '@db/prisma.service';
@@ -72,6 +77,7 @@ export class StoreSettingsService {
           heroSubtitle: blankToNull(dto.heroSubtitle),
           // Obligatoria: null no la vacía, no la toca.
           template: dto.template ?? undefined,
+          theme: themeColumn(dto.theme),
         },
       });
 
@@ -86,6 +92,23 @@ export class StoreSettingsService {
   }
 }
 
+/**
+ * Qué se escribe en la columna: nada si no vino, `NULL` si se quitó o quedó
+ * sin ajustes —la plantilla tal cual no necesita guardarse—, y si no, el
+ * objeto normalizado por `readTheme`.
+ */
+function themeColumn(
+  theme: UpdateStoreThemeDto | null | undefined,
+): Prisma.InputJsonObject | typeof Prisma.DbNull | undefined {
+  if (theme === undefined) return undefined;
+
+  const normalized = readTheme(theme);
+
+  if (isEmptyTheme(normalized)) return Prisma.DbNull;
+
+  return { ...normalized };
+}
+
 function toDto(storeName: string, settings: StoreSettings, assistant: boolean): StoreSettingsDto {
   return {
     storeName,
@@ -97,6 +120,7 @@ function toDto(storeName: string, settings: StoreSettings, assistant: boolean): 
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,
     template: settings.template,
+    theme: readTheme(settings.theme),
     assistant,
     updatedAt: settings.updatedAt,
   };

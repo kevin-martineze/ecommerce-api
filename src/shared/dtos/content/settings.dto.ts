@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsIn,
   IsInt,
@@ -12,9 +13,61 @@ import {
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { STOREFRONT_TEMPLATES } from '@shared/content/templates';
+import {
+  HEX_COLOR,
+  THEME_CORNERS,
+  THEME_FONTS,
+  THEME_HEROES,
+  ThemeCorners,
+  ThemeFont,
+  ThemeHero,
+} from '@shared/content/theme';
 import { Trim } from '@shared/dtos/transforms';
+
+/** Lo que la tienda le ajusta a su plantilla. Cada `null` es «lo que diga la plantilla». */
+export class StoreThemeDto {
+  @ApiProperty({ nullable: true, example: '#1D4ED8', description: 'Color de la marca.' })
+  accent!: string | null;
+
+  @ApiProperty({ nullable: true, enum: THEME_FONTS, description: 'Pareja de letras.' })
+  fonts!: ThemeFont | null;
+
+  @ApiProperty({ nullable: true, enum: THEME_CORNERS })
+  corners!: ThemeCorners | null;
+
+  @ApiProperty({ nullable: true, enum: THEME_HEROES, description: 'Cómo se arma la portada.' })
+  hero!: ThemeHero | null;
+}
+
+/**
+ * Los ajustes se mandan siempre juntos y reemplazan a los anteriores: es un
+ * solo formulario, y así quitar uno es mandarlo en `null` sin tener que pensar
+ * en qué había antes.
+ */
+export class UpdateStoreThemeDto {
+  @ApiPropertyOptional({ nullable: true, example: '#1D4ED8' })
+  @IsOptional()
+  @Matches(HEX_COLOR, { message: 'El color va en formato #RRGGBB.' })
+  accent?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, enum: THEME_FONTS })
+  @IsOptional()
+  @IsIn(THEME_FONTS, { message: 'Elige una de las letras disponibles.' })
+  fonts?: ThemeFont | null;
+
+  @ApiPropertyOptional({ nullable: true, enum: THEME_CORNERS })
+  @IsOptional()
+  @IsIn(THEME_CORNERS, { message: 'Elige una de las esquinas disponibles.' })
+  corners?: ThemeCorners | null;
+
+  @ApiPropertyOptional({ nullable: true, enum: THEME_HEROES })
+  @IsOptional()
+  @IsIn(THEME_HEROES, { message: 'Elige una de las portadas disponibles.' })
+  hero?: ThemeHero | null;
+}
 
 export class StoreSettingsDto {
   @ApiProperty()
@@ -43,6 +96,9 @@ export class StoreSettingsDto {
 
   @ApiProperty({ enum: STOREFRONT_TEMPLATES, description: 'Diseño de la vitrina.' })
   template!: string;
+
+  @ApiProperty({ type: StoreThemeDto, description: 'Lo que la tienda le ajusta a su plantilla.' })
+  theme!: StoreThemeDto;
 
   @ApiProperty({ description: 'Si la tienda tiene asistente: lo deciden su plan y la plataforma.' })
   assistant!: boolean;
@@ -122,4 +178,14 @@ export class UpdateStoreSettingsDto {
   @Trim()
   @IsIn(STOREFRONT_TEMPLATES, { message: 'Elige una de las plantillas disponibles.' })
   template?: string;
+
+  @ApiPropertyOptional({
+    type: UpdateStoreThemeDto,
+    nullable: true,
+    description: 'Reemplaza los ajustes de la plantilla; `null` vuelve a la plantilla tal cual.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateStoreThemeDto)
+  theme?: UpdateStoreThemeDto | null;
 }

@@ -141,6 +141,49 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
       await panel('PATCH', '/settings', { template: 'editorial' });
     });
 
+    it('los ajustes de la plantilla se guardan, se publican y se quitan', async () => {
+      type Theme = {
+        accent: string | null;
+        fonts: string | null;
+        corners: string | null;
+        hero: string | null;
+      };
+
+      const inicial = await panel<{ theme: Theme }>('GET', '/settings');
+
+      expect(inicial.body.theme).toEqual({ accent: null, fonts: null, corners: null, hero: null });
+
+      const { status, body } = await panel<{ theme: Theme }>('PATCH', '/settings', {
+        theme: { accent: '#1d4ed8', fonts: 'serif', corners: null, hero: 'split' },
+      });
+
+      expect(status).toBe(200);
+      expect(body.theme).toEqual({
+        accent: '#1D4ED8',
+        fonts: 'serif',
+        corners: null,
+        hero: 'split',
+      });
+
+      // Cambiar otra cosa no toca los ajustes.
+      await panel('PATCH', '/settings', { announcement: 'Envío gratis' });
+
+      const publico = await pub<{ settings: { theme: Theme } }>('');
+
+      expect(publico.body.settings.theme.accent).toBe('#1D4ED8');
+
+      const quitado = await panel<{ theme: Theme }>('PATCH', '/settings', { theme: null });
+
+      expect(quitado.body.theme).toEqual({ accent: null, fonts: null, corners: null, hero: null });
+      await panel('PATCH', '/settings', { announcement: null });
+    });
+
+    it('rechaza un color o un ajuste que no existe', async () => {
+      expect((await panel('PATCH', '/settings', { theme: { accent: 'azul' } })).status).toBe(400);
+      expect((await panel('PATCH', '/settings', { theme: { fonts: 'comic' } })).status).toBe(400);
+      expect((await panel('PATCH', '/settings', { theme: { logo: 'x' } })).status).toBe(400);
+    });
+
     it('una plantilla que no existe se rechaza', async () => {
       expect((await panel('PATCH', '/settings', { template: 'inventada' })).status).toBe(400);
     });
