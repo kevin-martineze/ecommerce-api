@@ -1083,8 +1083,8 @@ model SupportTicket {
   // Lo que el mensaje necesita para apuntar a un ticket de SU tienda: la FK
   // compuesta de la migración lo garantiza en la base.
   @@unique([id, storeId])
-  @@index([storeId, lastMessageAt(sort: Desc)])
-  @@index([status, lastMessageAt])
+  @@index([storeId, lastMessageAt(sort: Desc)], map: "support_tickets_store_last_message_idx")
+  @@index([status, lastMessageAt], map: "support_tickets_status_last_message_idx")
   @@map("support_tickets")
 }
 
@@ -1108,7 +1108,7 @@ model SupportMessage {
   store      Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
   authorUser User?         @relation("SupportMessageAuthoredBy", fields: [authorUserId], references: [id], onDelete: SetNull)
 
-  @@index([ticketId, createdAt])
-  @@index([storeId, author, createdAt])
+  @@index([ticketId, createdAt], map: "support_messages_ticket_created_idx")
+  @@index([storeId, author, createdAt], map: "support_messages_store_author_created_idx")
   @@map("support_messages")
 }
