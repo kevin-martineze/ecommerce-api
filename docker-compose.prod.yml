@@ -1,6 +1,6 @@
 # La API y su base en una sola instancia.
 #
-# Lo levanta `scripts/deploy-ec2.sh` en el servidor. Postgres NO publica su
+# Lo levanta `./deploy.sh` en el servidor. Postgres NO publica su
 # puerto: solo lo alcanza la API por la red interna de compose. Para entrar a
 # la base desde afuera se hace un túnel SSH (ver docs/DEPLOY-AWS.md).
 #

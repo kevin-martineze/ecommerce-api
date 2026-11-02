@@ -128,22 +128,63 @@ después con `alter role tienda_app with password '…'`.
 
 ## 5. Desplegar
 
-En tu máquina, `.deploy.env` (tampoco se versiona):
-
-```env
-DEPLOY_HOST=ubuntu@<IP>
-DEPLOY_KEY=~/.ssh/globerce.pem
-DEPLOY_COMPOSE=-f docker-compose.prod.yml -f docker-compose.caddy.yml
-```
+Se despliega lo que está en `main` de GitHub, desde el servidor. Los cambios
+se suben desde tu máquina como siempre (PR y merge a `main`); para ponerlos en
+producción:
 
 ```bash
-./scripts/deploy-ec2.sh
+ssh -i ~/.ssh/globerce.pem ubuntu@<IP>
+cd /opt/globerce
+git pull origin main
+./deploy.sh
 ```
 
-Copia el código, construye la imagen **en el servidor** (la instancia es ARM y
-`argon2` y `sharp` traen binarios nativos) y levanta los contenedores. Las
-migraciones las aplica la propia API al arrancar; si fallan, el contenedor no
-queda sirviendo contra un esquema viejo.
+`deploy.sh`:
+
+1. Revisa que estés en `main`, sin cambios hechos a mano en el servidor, y que
+   exista `.env.production`.
+2. Construye la imagen **en el servidor** (la instancia es ARM y `argon2` y
+   `sharp` traen binarios nativos). La que estaba corriendo queda como
+   `globerce-api:previous`.
+3. Recrea solo los contenedores que cambiaron: Postgres no se reinicia.
+4. Espera a que `/v1/health/ready` responda. Las migraciones las aplica la
+   propia API al arrancar (`docker/entrypoint.sh`); si fallan, el contenedor
+   no queda sirviendo y el script muestra los registros.
+
+Por defecto usa `-f docker-compose.prod.yml -f docker-compose.caddy.yml`. Para
+otro overlay, `DEPLOY_COMPOSE="…"` en `/opt/globerce/.deploy.env`.
+
+Volver a la versión anterior:
+
+```bash
+docker tag globerce-api:previous globerce-api:latest
+docker compose -f docker-compose.prod.yml -f docker-compose.caddy.yml up -d api
+```
+
+Ojo: una migración ya aplicada no se deshace sola; la versión anterior corre
+contra el esquema nuevo.
+
+### Pasar el servidor a git (una sola vez)
+
+Antes, `/opt/globerce` se llenaba con `rsync` desde el portátil y no era un
+repositorio. Para convertirlo sin tocar `.env.production`, `backups/` ni la
+base:
+
+```bash
+cd /opt/globerce
+which git || sudo apt install -y git
+git init -b main
+git remote add origin https://github.com/kevin-martineze/ecommerce-api.git
+git fetch origin main
+git reset --hard origin/main      # deja el código igual a main; lo ignorado no se toca
+git branch --set-upstream-to=origin/main
+git status                        # debe decir «nothing to commit»
+./deploy.sh
+```
+
+Si `git status` muestra archivos sueltos, son restos de las copias con
+`rsync`: revísalos y bórralos (`git clean -n` para ver, `git clean -f` para
+borrar). `git clean` no toca lo que está en `.gitignore`.
 
 ### HTTPS sin dominio propio
 
