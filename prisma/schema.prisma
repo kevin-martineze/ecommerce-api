@@ -115,6 +115,8 @@ model Store {
   restockRequests RestockRequest[]
   homeHighlights  HomeHighlight[]
   invitations     StoreInvitation[]
+  supportTickets  SupportTicket[]
+  supportMessages SupportMessage[]
 
   @@map("stores")
 }
@@ -154,10 +156,10 @@ model StorePaymentAccount {
 
   provider String @default("wompi")
 
-  publicKey             String  @map("public_key")
-  privateKeySealed      String  @map("private_key_sealed")
-  integritySecretSealed String  @map("integrity_secret_sealed")
-  eventsSecretSealed    String  @map("events_secret_sealed")
+  publicKey             String @map("public_key")
+  privateKeySealed      String @map("private_key_sealed")
+  integritySecretSealed String @map("integrity_secret_sealed")
+  eventsSecretSealed    String @map("events_secret_sealed")
 
   active    Boolean  @default(true)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -236,12 +238,14 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships         StoreMember[]
-  platformAdmin       PlatformAdmin?
-  refreshTokens       RefreshToken[]
-  payments            Payment[]
-  passwordResetTokens PasswordResetToken[]
-  sentInvitations     StoreInvitation[]
+  memberships            StoreMember[]
+  platformAdmin          PlatformAdmin?
+  refreshTokens          RefreshToken[]
+  payments               Payment[]
+  passwordResetTokens    PasswordResetToken[]
+  sentInvitations        StoreInvitation[]
+  supportTicketsOpened   SupportTicket[]      @relation("SupportTicketOpenedBy")
+  supportMessagesWritten SupportMessage[]     @relation("SupportMessageAuthoredBy")
 
   @@map("users")
 }
@@ -1008,4 +1012,103 @@ model RestockRequest {
 
   @@index([storeId, createdAt])
   @@map("restock_requests")
+}
+
+/// Motivo de un ticket de soporte. Lo elige la dueña al abrirlo y sirve para
+/// ordenar la bandeja del equipo.
+enum SupportCategory {
+  CONFIGURATION
+  DOMAIN
+  PAYMENTS
+  PLAN
+  PRODUCTS_ORDERS
+  ERROR
+  OTHER
+
+  @@map("support_category")
+}
+
+/// `OPEN`: espera respuesta del equipo (o la dueña escribió y nadie contestó).
+/// `ANSWERED`: el equipo respondió y la dueña tiene la última palabra por ver.
+/// `CLOSED`: el equipo dio el caso por resuelto. Si la dueña vuelve a escribir,
+/// vuelve a `OPEN`.
+enum SupportTicketStatus {
+  OPEN
+  ANSWERED
+  CLOSED
+
+  @@map("support_ticket_status")
+}
+
+/// Quién escribió un mensaje: la dueña de la tienda o el equipo de Globerce.
+enum SupportAuthor {
+  OWNER
+  TEAM
+
+  @@map("support_author")
+}
+
+/// Un caso de soporte entre una tienda y el equipo de Globerce.
+///
+/// Bajo RLS como todo lo que cuelga de una tienda. Los contadores de "sin leer"
+/// no tienen columna propia: salen de comparar cada mensaje contra la última
+/// vez que cada lado abrió el ticket.
+model SupportTicket {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+
+  /// Quién lo abrió. Null si esa cuenta se borró después: el caso sigue siendo de la tienda.
+  openedById String? @map("opened_by_id") @db.Uuid
+
+  subject  String
+  category SupportCategory
+  status   SupportTicketStatus @default(OPEN)
+
+  /// Última vez que la dueña abrió el hilo. Null: nunca lo abrió.
+  ownerLastReadAt DateTime? @map("owner_last_read_at") @db.Timestamptz(6)
+
+  /// Última vez que el equipo abrió el hilo. Null: nadie del equipo lo abrió todavía.
+  teamLastReadAt DateTime? @map("team_last_read_at") @db.Timestamptz(6)
+
+  /// Fecha del último mensaje. Ordena la bandeja y mide cuánto lleva esperando.
+  lastMessageAt DateTime @default(now()) @map("last_message_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  store    Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  openedBy User?            @relation("SupportTicketOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  messages SupportMessage[]
+
+  // Lo que el mensaje necesita para apuntar a un ticket de SU tienda: la FK
+  // compuesta de la migración lo garantiza en la base.
+  @@unique([id, storeId])
+  @@index([storeId, lastMessageAt(sort: Desc)])
+  @@index([status, lastMessageAt])
+  @@map("support_tickets")
+}
+
+/// Un mensaje del hilo. `storeId` va repetido a propósito para que la política
+/// de RLS pueda compararlo sin unirse al ticket; la FK compuesta impide que no
+/// coincida con el de su ticket.
+model SupportMessage {
+  id       String @id @default(uuid()) @db.Uuid
+  ticketId String @map("ticket_id") @db.Uuid
+  storeId  String @map("store_id") @db.Uuid
+
+  author       SupportAuthor
+  authorUserId String?       @map("author_user_id") @db.Uuid
+
+  /// Texto libre de la dueña o del equipo. Se valida en el DTO y en la base.
+  body String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket     SupportTicket @relation(fields: [ticketId, storeId], references: [id, storeId], onDelete: Cascade)
+  store      Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  authorUser User?         @relation("SupportMessageAuthoredBy", fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([storeId, author, createdAt])
+  @@map("support_messages")
 }

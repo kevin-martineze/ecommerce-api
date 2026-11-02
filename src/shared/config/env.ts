@@ -94,6 +94,8 @@ const envSchema = z.object({
   /** `smtp://usuario:clave@host:587` o `smtps://…:465`. Solo con `MAIL_DRIVER=smtp`. */
   SMTP_URL: z.string().url().optional(),
   MAIL_FROM: z.string().min(3).default('Globerce <no-responder@globerce.local>'),
+  /** A dónde llegan los casos nuevos del centro de soporte. Sin esto, los casos se guardan pero nadie recibe aviso. */
+  SUPPORT_TEAM_EMAIL: z.string().email().optional(),
 
   /**
    * Asistente de la tienda. `none`: apagado en toda la plataforma, el chat ni

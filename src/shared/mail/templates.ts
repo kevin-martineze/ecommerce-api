@@ -34,6 +34,46 @@ ${body}
 </body></html>`;
 }
 
+/** Al equipo: una tienda abrió un caso o escribió en uno. Sin el texto: el enlace lleva a la conversación. */
+export function supportOwnerWroteMail(
+  to: string,
+  storeName: string,
+  subject: string,
+  url: string,
+  isNew: boolean,
+): MailMessage {
+  const title = isNew ? `Caso nuevo de ${storeName}` : `Nueva respuesta de ${storeName}`;
+  const lines = [
+    isNew
+      ? `${storeName} abrió un caso de soporte: «${subject}».`
+      : `${storeName} escribió en el caso «${subject}».`,
+    'Abre el caso para leer el mensaje completo y responder.',
+  ];
+
+  return {
+    to,
+    subject: title,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: layout(title, lines, { label: 'Abrir el caso', url }),
+  };
+}
+
+/** A la dueña: el equipo le respondió su caso. */
+export function supportTeamRepliedMail(to: string, subject: string, url: string): MailMessage {
+  const title = 'Te respondimos en Globerce';
+  const lines = [
+    `Respondimos tu caso «${subject}». Entra a tu panel para leer la respuesta.`,
+    'Si ya quedó resuelto, no hace falta que respondas.',
+  ];
+
+  return {
+    to,
+    subject: title,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: layout(title, lines, { label: 'Leer la respuesta', url }),
+  };
+}
+
 export function passwordResetMail(to: string, url: string, minutes: number): MailMessage {
   const title = 'Restablece tu contraseña';
   const lines = [
