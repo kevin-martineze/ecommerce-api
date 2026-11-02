@@ -17,3 +17,6 @@ coverage/
 
 # Copias de la base en el servidor (ver scripts/backup-db.sh).
 /backups
+
+# Marca de servidor listo que deja el user-data (docs/DEPLOY-AWS.md § 3)
+/.listo
