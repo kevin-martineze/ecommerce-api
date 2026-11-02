@@ -65,7 +65,7 @@ step "2/5 Construyendo la imagen"
 if docker image inspect "$IMAGE:latest" >/dev/null 2>&1; then
   docker tag "$IMAGE:latest" "$IMAGE:previous"
 fi
-DOCKER_BUILDKIT=1 docker build -t "$IMAGE:latest" .
+docker build -t "$IMAGE:latest" .
 
 step "3/5 Levantando los contenedores"
 compose up -d --remove-orphans
