@@ -162,3 +162,24 @@ Estos no los puedo cerrar yo solo:
   `ecommerce-api/.env` (`ANTHROPIC_API_KEY`). Sin ella el chat no se ofrece.
 - **Datos de la empresa:** razón social, NIT y un correo de contacto, para las
   páginas legales.
+
+---
+
+## 8. Centro de soporte (rama `feat/centro-de-soporte`)
+
+Hallazgos de la auditoría antes de subir la rama. Ninguno está arreglado; cada
+uno necesita una decisión o un despliegue.
+
+- [ ] **Aviso al equipo en producción.** `SUPPORT_TEAM_EMAIL` no existe en
+      producción. Además, el correo sale solo con `MAIL_DRIVER=smtp` y
+      `SMTP_URL`. Sin eso, el equipo no recibe aviso de los casos nuevos (el
+      caso se guarda igual).
+- [ ] **Quién puede usar el centro de soporte.** `@Roles('OWNER')` deja fuera
+      a los miembros de la tienda con otros roles. Hay que decidir si es lo que
+      se quiere.
+- [ ] **Bandeja de la plataforma limitada a 200 tiendas.** `STORE_LIMIT` corta
+      la lectura: los casos de la tienda 201 en adelante no aparecen y no hay
+      aviso. Hace falta paginar en la base o una política acotada.
+- [ ] **Navegación del administrador de plataforma que también es dueño.** Una
+      cuenta que administra la plataforma y tiene tienda cae en `/admin/soporte`
+      y abre casos como dueña. Falta un enlace visible a `/plataforma/soporte`.
