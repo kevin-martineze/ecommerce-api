@@ -68,7 +68,7 @@ describe('Centro de soporte (e2e)', () => {
 
   beforeAll(async () => {
     api = await startTestApp();
-    owner = await api.register('soporte-dueña');
+    owner = await api.register('soporte-duena');
     otherOwner = await api.register('soporte-otra');
     team = await api.register('soporte-equipo');
 
