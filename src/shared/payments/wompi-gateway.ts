@@ -15,6 +15,7 @@ import {
   SetupInfo,
   WidgetConfig,
 } from './gateway';
+import { fetchMerchant, WompiMerchant } from './wompi-keys';
 
 /**
  * Wompi (Bancolombia): tarjetas, PSE, Nequi y botón Bancolombia.
@@ -123,19 +124,33 @@ export class WompiGateway extends PaymentGateway {
    */
   async setup(credentials?: GatewayCredentials): Promise<SetupInfo> {
     const keys = this.keysOf(credentials);
-    const merchant = await this.get<WompiMerchant>(`/merchants/${keys.publicKey}`);
-    const acceptance = merchant.data?.presigned_acceptance;
+    const merchant = await this.merchant(keys.publicKey);
 
-    if (!acceptance?.acceptance_token) {
+    if (!merchant.acceptanceToken) {
       throw new Error('Wompi no devolvió el token de aceptación de sus términos.');
     }
 
     return {
       publicKey: keys.publicKey,
       apiUrl: this.apiUrl,
-      acceptanceToken: acceptance.acceptance_token,
-      termsUrl: acceptance.permalink ?? '',
+      acceptanceToken: merchant.acceptanceToken,
+      termsUrl: merchant.termsUrl ?? '',
     };
+  }
+
+  /**
+   * La cuenta de comercio de la llave, por `GET /merchants/info`. Es la única
+   * consulta de merchant del gateway: el acceptance token y la verificación al
+   * conectar salen de aquí.
+   */
+  private async merchant(publicKey: string): Promise<WompiMerchant> {
+    const result = await fetchMerchant(publicKey);
+
+    if (!result.ok) {
+      throw new Error(`Wompi no devolvió la cuenta de comercio (${result.reason}).`);
+    }
+
+    return result.merchant;
   }
 
   async createPaymentSource(
@@ -249,10 +264,6 @@ export class WompiGateway extends PaymentGateway {
 }
 
 const CURRENCY = 'COP';
-
-interface WompiMerchant {
-  data?: { presigned_acceptance?: { acceptance_token?: string; permalink?: string } };
-}
 
 interface WompiPaymentSource {
   data?: { id?: number | string; public_data?: { brand?: string; last_four?: string } };
