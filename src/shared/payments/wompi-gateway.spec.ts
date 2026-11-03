@@ -92,6 +92,26 @@ describe('WompiGateway', () => {
     });
   });
 
+  describe('el widget embebido', () => {
+    it('lleva la misma firma, monto y referencia que el enlace', () => {
+      const session = gateway.checkout({
+        reference: 'ord-77',
+        amountCop: 45_500,
+        description: 'Pedido #77',
+        redirectUrl: 'https://globerce.store/pedido/77',
+        customerEmail: 'clienta@example.com',
+      });
+
+      const params = new URL(session.url).searchParams;
+
+      expect(session.widget).not.toBeNull();
+      expect(session.widget?.integritySignature).toBe(params.get('signature:integrity'));
+      expect(session.widget?.amountInCents).toBe(4_550_000);
+      expect(session.widget?.reference).toBe('ord-77');
+      expect(session.widget?.customerEmail).toBe('clienta@example.com');
+    });
+  });
+
   describe('la tarjeta guardada', () => {
     const originalFetch = globalThis.fetch;
 

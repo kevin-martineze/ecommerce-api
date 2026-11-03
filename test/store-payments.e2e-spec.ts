@@ -28,6 +28,7 @@ interface Link {
   url: string;
   reference: string;
   amountCop: number;
+  widget: { publicKey: string } | null;
   message?: string;
 }
 
@@ -178,6 +179,8 @@ describe('Pagos de la tienda (e2e)', () => {
       expect(status).toBe(201);
       expect(body.amountCop).toBe(pedido.total);
       expect(body.reference).toContain('ord-');
+      // Con la pasarela simulada no hay widget: la página sigue por redirección.
+      expect(body.widget).toBeNull();
 
       // Mientras no llegue el evento, el pedido no está pago.
       expect((await verPedido()).body.paymentStatus).toBe('PENDING');

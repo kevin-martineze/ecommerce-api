@@ -77,6 +77,30 @@ export class OrderCheckoutDto {
   redirectUrl!: string;
 }
 
+/** Lo que el navegador necesita para abrir el widget embebido de Wompi. */
+export class PaymentWidgetDto {
+  @ApiProperty({ description: 'Llave pública de la tienda en la pasarela.' })
+  publicKey!: string;
+
+  @ApiProperty({ enum: ['COP'] })
+  currency!: 'COP';
+
+  @ApiProperty({ description: 'Monto en centavos: el peso colombiano por 100.' })
+  amountInCents!: number;
+
+  @ApiProperty({ description: 'Nuestra referencia del cobro.' })
+  reference!: string;
+
+  @ApiProperty({ description: 'Firma de integridad del monto; la misma que va en la URL.' })
+  integritySignature!: string;
+
+  @ApiProperty({ description: 'A dónde vuelve quien pagó.' })
+  redirectUrl!: string;
+
+  @ApiPropertyOptional({ description: 'Correo de quien paga, si lo tenemos.' })
+  customerEmail?: string;
+}
+
 export class PaymentLinkDto {
   @ApiProperty()
   url!: string;
@@ -86,4 +110,11 @@ export class PaymentLinkDto {
 
   @ApiProperty()
   amountCop!: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: PaymentWidgetDto,
+    description: 'Config del widget embebido; null si la pasarela no tiene widget.',
+  })
+  widget!: PaymentWidgetDto | null;
 }

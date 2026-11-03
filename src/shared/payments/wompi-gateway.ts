@@ -13,6 +13,7 @@ import {
   PaymentSourceInput,
   PaymentStatus,
   SetupInfo,
+  WidgetConfig,
 } from './gateway';
 
 /**
@@ -43,24 +44,38 @@ export class WompiGateway extends PaymentGateway {
     const keys = this.keysOf(credentials);
     const cents = toCents(input.amountCop);
     const url = new URL(this.checkoutUrl);
+    // Una sola firma para la URL y para el widget: si fueran dos cálculos, podrían divergir.
+    // Sin esta firma Wompi rechaza el pago: es lo que impide que alguien cambie el
+    // monto en la barra de direcciones y pague mil pesos por lo que vale cien mil.
+    const integritySignature = sha256(
+      `${input.reference}${cents}${CURRENCY}${keys.integritySecret}`,
+    );
 
     url.searchParams.set('public-key', keys.publicKey);
     url.searchParams.set('currency', CURRENCY);
     url.searchParams.set('amount-in-cents', String(cents));
     url.searchParams.set('reference', input.reference);
     url.searchParams.set('redirect-url', input.redirectUrl);
-    // Sin esto Wompi rechaza el enlace: es lo que impide que alguien cambie el
-    // monto en la barra de direcciones y pague mil pesos por lo que vale cien mil.
-    url.searchParams.set(
-      'signature:integrity',
-      sha256(`${input.reference}${cents}${CURRENCY}${keys.integritySecret}`),
-    );
+    url.searchParams.set('signature:integrity', integritySignature);
 
     if (input.customerEmail) {
       url.searchParams.set('customer-data:email', input.customerEmail);
     }
 
-    return { url: url.toString(), reference: input.reference };
+    const widget: WidgetConfig = {
+      publicKey: keys.publicKey,
+      currency: CURRENCY,
+      amountInCents: cents,
+      reference: input.reference,
+      integritySignature,
+      redirectUrl: input.redirectUrl,
+    };
+
+    if (input.customerEmail) {
+      widget.customerEmail = input.customerEmail;
+    }
+
+    return { url: url.toString(), reference: input.reference, widget };
   }
 
   /**
