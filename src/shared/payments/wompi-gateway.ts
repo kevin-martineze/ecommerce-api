@@ -35,7 +35,6 @@ export class WompiGateway extends PaymentGateway {
 
   constructor(
     private readonly checkoutUrl: string,
-    private readonly apiUrl: string,
     private readonly platform?: GatewayCredentials,
   ) {
     super();
@@ -166,6 +165,7 @@ export class WompiGateway extends PaymentGateway {
     const keys = this.keysOf(credentials);
 
     const created = await this.post<WompiPaymentSource>(
+      keys.publicKey,
       '/payment_sources',
       {
         type: 'CARD',
@@ -201,6 +201,7 @@ export class WompiGateway extends PaymentGateway {
     const cents = toCents(input.amountCop);
 
     const created = await this.post<WompiTransaction>(
+      keys.publicKey,
       '/transactions',
       {
         amount_in_cents: cents,
@@ -229,12 +230,17 @@ export class WompiGateway extends PaymentGateway {
     };
   }
 
-  private async get<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'GET' });
-  }
-
-  private async post<T>(path: string, body: unknown, privateKey: string): Promise<T> {
-    return this.request<T>(path, {
+  /**
+   * Una llamada que escribe en Wompi. El entorno lo decide la llave pública
+   * con la que se llama: sandbox o producción, nunca una variable aparte.
+   */
+  private async post<T>(
+    publicKey: string,
+    path: string,
+    body: unknown,
+    privateKey: string,
+  ): Promise<T> {
+    return this.request<T>(publicKey, path, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${privateKey}` },
       body: JSON.stringify(body),
@@ -242,14 +248,18 @@ export class WompiGateway extends PaymentGateway {
   }
 
   /**
-   * Una petición a la API de Wompi.
+   * Una petición a la API de Wompi del entorno de su llave.
    *
    * El cuerpo del error se incluye en el mensaje porque sin él un 422 no dice
    * qué campo rechazó, y eso es media hora a ciegas. Nunca lleva la tarjeta:
    * lo que se manda es un token.
    */
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await fetch(`${this.apiUrl}${path}`, init);
+  private async request<T>(publicKey: string, path: string, init: RequestInit): Promise<T> {
+    const base = wompiBaseUrlOf(publicKey);
+
+    if (!base) throw new Error('La llave pública no es de Wompi.');
+
+    const response = await fetch(`${base}${path}`, init);
     const text = await response.text();
 
     if (!response.ok) {

@@ -40,6 +40,7 @@ function fetchFalso(respuesta: { status: number; body?: unknown } | 'red-caida')
       ok: respuesta.status < 400,
       status: respuesta.status,
       json: () => Promise.resolve(respuesta.body ?? null),
+      text: () => Promise.resolve(JSON.stringify(respuesta.body ?? null)),
     } as Response);
   }) as typeof fetch;
 
@@ -128,15 +129,24 @@ describe('checkWompiKeys', () => {
   });
 });
 
+const credencialesTest = {
+  publicKey: 'pub_test_llave',
+  privateKey: 'prv_test_llave',
+  integritySecret: 'test_integrity_secreto',
+  eventsSecret: 'test_events_secreto',
+};
+
+const credencialesProd = {
+  publicKey: 'pub_prod_llave',
+  privateKey: 'prv_prod_llave',
+  integritySecret: 'prod_integrity_secreto',
+  eventsSecret: 'prod_events_secreto',
+};
+
 describe('WompiGateway.setup', () => {
   it('saca el acceptance token de /merchants/info, no de la ruta vieja', async () => {
     const llamadas = fetchFalso({ status: 200, body: respuestaComercio });
-    const gateway = new WompiGateway('https://checkout.wompi.co/p/', 'https://x.test/v1', {
-      publicKey: 'pub_test_llave',
-      privateKey: 'prv_test_llave',
-      integritySecret: 'test_integrity_secreto',
-      eventsSecret: 'test_events_secreto',
-    });
+    const gateway = new WompiGateway('https://checkout.wompi.co/p/', credencialesTest);
 
     const setup = await gateway.setup();
 
@@ -146,17 +156,55 @@ describe('WompiGateway.setup', () => {
     expect(llamadas.some((llamada) => llamada.url.includes('/merchants/pub_'))).toBe(false);
   });
 
-  it('tokeniza en el mismo entorno que consultó el merchant, por prefijo y no por WOMPI_API_URL', async () => {
+  it('tokeniza en el entorno de su llave, por prefijo', async () => {
     fetchFalso({ status: 200, body: respuestaComercio });
-    const gateway = new WompiGateway('https://checkout.wompi.co/p/', 'https://x.test/v1', {
-      publicKey: 'pub_prod_llave',
-      privateKey: 'prv_prod_llave',
-      integritySecret: 'prod_integrity_secreto',
-      eventsSecret: 'prod_events_secreto',
-    });
+    const gateway = new WompiGateway('https://checkout.wompi.co/p/', credencialesProd);
 
     const setup = await gateway.setup();
 
     expect(setup.apiUrl).toBe('https://production.wompi.co/v1');
+  });
+});
+
+describe('cada llamada de WompiGateway va al entorno de su llave', () => {
+  const origen = { reference: 'sub-1', amountCop: 49000, description: 'Plan' };
+
+  it('createPaymentSource con llave de pruebas va a sandbox', async () => {
+    const llamadas = fetchFalso({ status: 201, body: { data: { id: 7 } } });
+    const gateway = new WompiGateway('https://checkout.wompi.co/p/');
+
+    await gateway.createPaymentSource(
+      { cardToken: 'tok_test_1', acceptanceToken: 'acepto', customerEmail: 'a@b.co' },
+      credencialesTest,
+    );
+
+    expect(llamadas[0]?.url).toBe('https://sandbox.wompi.co/v1/payment_sources');
+  });
+
+  it('createPaymentSource con llave de producción va a producción', async () => {
+    const llamadas = fetchFalso({ status: 201, body: { data: { id: 7 } } });
+    const gateway = new WompiGateway('https://checkout.wompi.co/p/');
+
+    await gateway.createPaymentSource(
+      { cardToken: 'tok_prod_1', acceptanceToken: 'acepto', customerEmail: 'a@b.co' },
+      credencialesProd,
+    );
+
+    expect(llamadas[0]?.url).toBe('https://production.wompi.co/v1/payment_sources');
+  });
+
+  it('charge con llave de pruebas va a sandbox y con la de producción a producción', async () => {
+    const llamadas = fetchFalso({
+      status: 201,
+      body: { data: { id: 'tx-1', status: 'APPROVED' } },
+    });
+    const gateway = new WompiGateway('https://checkout.wompi.co/p/');
+    const cobro = { ...origen, customerEmail: 'a@b.co', paymentSourceId: '7' };
+
+    await gateway.charge(cobro, credencialesTest);
+    await gateway.charge(cobro, credencialesProd);
+
+    expect(llamadas[0]?.url).toBe('https://sandbox.wompi.co/v1/transactions');
+    expect(llamadas[1]?.url).toBe('https://production.wompi.co/v1/transactions');
   });
 });

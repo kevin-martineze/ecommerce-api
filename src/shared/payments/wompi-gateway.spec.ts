@@ -16,11 +16,7 @@ const keys: GatewayCredentials = {
   eventsSecret: 'secreto-de-eventos',
 };
 
-const gateway = new WompiGateway(
-  'https://checkout.wompi.co/p/',
-  'https://sandbox.wompi.co/v1',
-  keys,
-);
+const gateway = new WompiGateway('https://checkout.wompi.co/p/', keys);
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
