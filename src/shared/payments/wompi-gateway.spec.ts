@@ -16,11 +16,7 @@ const keys: GatewayCredentials = {
   eventsSecret: 'secreto-de-eventos',
 };
 
-const gateway = new WompiGateway(
-  'https://checkout.wompi.co/p/',
-  'https://sandbox.wompi.co/v1',
-  keys,
-);
+const gateway = new WompiGateway('https://checkout.wompi.co/p/', keys);
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -89,6 +85,26 @@ describe('WompiGateway', () => {
       expect(params.get('signature:integrity')).toBe(
         sha256(`sub-abc9900000COP${keys.integritySecret}`),
       );
+    });
+  });
+
+  describe('el widget embebido', () => {
+    it('lleva la misma firma, monto y referencia que el enlace', () => {
+      const session = gateway.checkout({
+        reference: 'ord-77',
+        amountCop: 45_500,
+        description: 'Pedido #77',
+        redirectUrl: 'https://globerce.store/pedido/77',
+        customerEmail: 'clienta@example.com',
+      });
+
+      const params = new URL(session.url).searchParams;
+
+      expect(session.widget).not.toBeNull();
+      expect(session.widget?.integritySignature).toBe(params.get('signature:integrity'));
+      expect(session.widget?.amountInCents).toBe(4_550_000);
+      expect(session.widget?.reference).toBe('ord-77');
+      expect(session.widget?.customerEmail).toBe('clienta@example.com');
     });
   });
 

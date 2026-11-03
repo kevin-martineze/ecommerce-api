@@ -150,7 +150,12 @@ export class SubscriptionsService {
 
     this.logger.log(`Cobro del plan ${plan.code} iniciado para la tienda ${storeId}`);
 
-    return { url: session.url, reference: session.reference, amountCop: plan.priceCop };
+    return {
+      url: session.url,
+      reference: session.reference,
+      amountCop: plan.priceCop,
+      widget: session.widget,
+    };
   }
 
   /**

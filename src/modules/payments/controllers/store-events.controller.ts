@@ -54,6 +54,8 @@ export class StoreEventsController {
       throw new UnauthorizedException('No autorizado.');
     }
 
+    // La firma cuadró: Wompi está hablando con esta tienda. Lo guarda el panel para mostrarlo.
+    await this.accounts.markEventReceived(storeId);
     await this.orders.applyPayment(storeId, event);
 
     return { received: true };

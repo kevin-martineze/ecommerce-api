@@ -90,7 +90,12 @@ export class OrderPaymentsService {
       }),
     );
 
-    return { url: session.url, reference: session.reference, amountCop: order.total };
+    return {
+      url: session.url,
+      reference: session.reference,
+      amountCop: order.total,
+      widget: session.widget,
+    };
   }
 
   /**

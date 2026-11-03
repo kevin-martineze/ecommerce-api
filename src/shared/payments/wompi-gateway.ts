@@ -13,7 +13,9 @@ import {
   PaymentSourceInput,
   PaymentStatus,
   SetupInfo,
+  WidgetConfig,
 } from './gateway';
+import { fetchMerchant, WompiMerchant, wompiBaseUrlOf } from './wompi-keys';
 
 /**
  * Wompi (Bancolombia): tarjetas, PSE, Nequi y botón Bancolombia.
@@ -33,7 +35,6 @@ export class WompiGateway extends PaymentGateway {
 
   constructor(
     private readonly checkoutUrl: string,
-    private readonly apiUrl: string,
     private readonly platform?: GatewayCredentials,
   ) {
     super();
@@ -43,24 +44,38 @@ export class WompiGateway extends PaymentGateway {
     const keys = this.keysOf(credentials);
     const cents = toCents(input.amountCop);
     const url = new URL(this.checkoutUrl);
+    // Una sola firma para la URL y para el widget: si fueran dos cálculos, podrían divergir.
+    // Sin esta firma Wompi rechaza el pago: es lo que impide que alguien cambie el
+    // monto en la barra de direcciones y pague mil pesos por lo que vale cien mil.
+    const integritySignature = sha256(
+      `${input.reference}${cents}${CURRENCY}${keys.integritySecret}`,
+    );
 
     url.searchParams.set('public-key', keys.publicKey);
     url.searchParams.set('currency', CURRENCY);
     url.searchParams.set('amount-in-cents', String(cents));
     url.searchParams.set('reference', input.reference);
     url.searchParams.set('redirect-url', input.redirectUrl);
-    // Sin esto Wompi rechaza el enlace: es lo que impide que alguien cambie el
-    // monto en la barra de direcciones y pague mil pesos por lo que vale cien mil.
-    url.searchParams.set(
-      'signature:integrity',
-      sha256(`${input.reference}${cents}${CURRENCY}${keys.integritySecret}`),
-    );
+    url.searchParams.set('signature:integrity', integritySignature);
 
     if (input.customerEmail) {
       url.searchParams.set('customer-data:email', input.customerEmail);
     }
 
-    return { url: url.toString(), reference: input.reference };
+    const widget: WidgetConfig = {
+      publicKey: keys.publicKey,
+      currency: CURRENCY,
+      amountInCents: cents,
+      reference: input.reference,
+      integritySignature,
+      redirectUrl: input.redirectUrl,
+    };
+
+    if (input.customerEmail) {
+      widget.customerEmail = input.customerEmail;
+    }
+
+    return { url: url.toString(), reference: input.reference, widget };
   }
 
   /**
@@ -108,19 +123,39 @@ export class WompiGateway extends PaymentGateway {
    */
   async setup(credentials?: GatewayCredentials): Promise<SetupInfo> {
     const keys = this.keysOf(credentials);
-    const merchant = await this.get<WompiMerchant>(`/merchants/${keys.publicKey}`);
-    const acceptance = merchant.data?.presigned_acceptance;
+    const merchant = await this.merchant(keys.publicKey);
 
-    if (!acceptance?.acceptance_token) {
+    if (!merchant.acceptanceToken) {
       throw new Error('Wompi no devolvió el token de aceptación de sus términos.');
     }
 
+    // El mismo entorno que consultó el merchant: el token de aceptación y la
+    // tokenización del navegador no pueden apuntar a mundos distintos.
+    const apiUrl = wompiBaseUrlOf(keys.publicKey);
+
+    if (!apiUrl) throw new Error('La llave pública no es de Wompi.');
+
     return {
       publicKey: keys.publicKey,
-      apiUrl: this.apiUrl,
-      acceptanceToken: acceptance.acceptance_token,
-      termsUrl: acceptance.permalink ?? '',
+      apiUrl,
+      acceptanceToken: merchant.acceptanceToken,
+      termsUrl: merchant.termsUrl ?? '',
     };
+  }
+
+  /**
+   * La cuenta de comercio de la llave, por `GET /merchants/info`. Es la única
+   * consulta de merchant del gateway: el acceptance token y la verificación al
+   * conectar salen de aquí.
+   */
+  private async merchant(publicKey: string): Promise<WompiMerchant> {
+    const result = await fetchMerchant(publicKey);
+
+    if (!result.ok) {
+      throw new Error(`Wompi no devolvió la cuenta de comercio (${result.reason}).`);
+    }
+
+    return result.merchant;
   }
 
   async createPaymentSource(
@@ -130,6 +165,7 @@ export class WompiGateway extends PaymentGateway {
     const keys = this.keysOf(credentials);
 
     const created = await this.post<WompiPaymentSource>(
+      keys.publicKey,
       '/payment_sources',
       {
         type: 'CARD',
@@ -165,6 +201,7 @@ export class WompiGateway extends PaymentGateway {
     const cents = toCents(input.amountCop);
 
     const created = await this.post<WompiTransaction>(
+      keys.publicKey,
       '/transactions',
       {
         amount_in_cents: cents,
@@ -193,12 +230,17 @@ export class WompiGateway extends PaymentGateway {
     };
   }
 
-  private async get<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'GET' });
-  }
-
-  private async post<T>(path: string, body: unknown, privateKey: string): Promise<T> {
-    return this.request<T>(path, {
+  /**
+   * Una llamada que escribe en Wompi. El entorno lo decide la llave pública
+   * con la que se llama: sandbox o producción, nunca una variable aparte.
+   */
+  private async post<T>(
+    publicKey: string,
+    path: string,
+    body: unknown,
+    privateKey: string,
+  ): Promise<T> {
+    return this.request<T>(publicKey, path, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${privateKey}` },
       body: JSON.stringify(body),
@@ -206,14 +248,18 @@ export class WompiGateway extends PaymentGateway {
   }
 
   /**
-   * Una petición a la API de Wompi.
+   * Una petición a la API de Wompi del entorno de su llave.
    *
    * El cuerpo del error se incluye en el mensaje porque sin él un 422 no dice
    * qué campo rechazó, y eso es media hora a ciegas. Nunca lleva la tarjeta:
    * lo que se manda es un token.
    */
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await fetch(`${this.apiUrl}${path}`, init);
+  private async request<T>(publicKey: string, path: string, init: RequestInit): Promise<T> {
+    const base = wompiBaseUrlOf(publicKey);
+
+    if (!base) throw new Error('La llave pública no es de Wompi.');
+
+    const response = await fetch(`${base}${path}`, init);
     const text = await response.text();
 
     if (!response.ok) {
@@ -234,10 +280,6 @@ export class WompiGateway extends PaymentGateway {
 }
 
 const CURRENCY = 'COP';
-
-interface WompiMerchant {
-  data?: { presigned_acceptance?: { acceptance_token?: string; permalink?: string } };
-}
 
 interface WompiPaymentSource {
   data?: { id?: number | string; public_data?: { brand?: string; last_four?: string } };

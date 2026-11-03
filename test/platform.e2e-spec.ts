@@ -32,6 +32,27 @@ interface Summary {
   usage: { products: number; ordersThisMonth: number };
 }
 
+/**
+ * Fechas de períodos contadas desde hoy, para que la prueba no caduque: un
+ * período escrito a mano queda en el pasado y la regla de «no acortar» cambia
+ * de sentido sin que el código haya cambiado.
+ */
+function inicioDeMes(desplazamiento: number): string {
+  const hoy = new Date();
+
+  return new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + desplazamiento, 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
+function finDeMes(desplazamiento: number): string {
+  const hoy = new Date();
+
+  return new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + desplazamiento + 1, 0))
+    .toISOString()
+    .slice(0, 10);
+}
+
 describe('Plataforma (e2e)', () => {
   let api: TestApp;
   let admin: Session;
@@ -142,8 +163,8 @@ describe('Plataforma (e2e)', () => {
         `/stores/${shop.storeId}/payments`,
         {
           amountCop: 49000,
-          periodStart: '2026-10-01',
-          periodEnd: '2026-10-31',
+          periodStart: inicioDeMes(1),
+          periodEnd: finDeMes(1),
           method: 'nequi',
           reference: 'M123',
         },
@@ -153,13 +174,13 @@ describe('Plataforma (e2e)', () => {
       expect(body).toMatchObject({
         status: 'ACTIVE',
         subscriptionStatus: 'ACTIVE',
-        currentPeriodEnd: '2026-10-31',
+        currentPeriodEnd: finDeMes(1),
         trialEndsAt: null,
       });
       expect(body.payments).toEqual([
         expect.objectContaining({
           amountCop: 49000,
-          periodEnd: '2026-10-31',
+          periodEnd: finDeMes(1),
           recordedBy: admin.email,
         }),
       ]);
@@ -168,12 +189,12 @@ describe('Plataforma (e2e)', () => {
     it('un pago con período anterior no acorta el vigente', async () => {
       const { body } = await platform<StoreDetail>('POST', `/stores/${shop.storeId}/payments`, {
         amountCop: 49000,
-        periodStart: '2026-09-01',
-        periodEnd: '2026-09-30',
+        periodStart: inicioDeMes(0),
+        periodEnd: finDeMes(0),
         method: 'efectivo',
       });
 
-      expect(body.currentPeriodEnd).toBe('2026-10-31');
+      expect(body.currentPeriodEnd).toBe(finDeMes(1));
       expect(body.payments).toHaveLength(2);
     });
 
@@ -218,12 +239,12 @@ describe('Plataforma (e2e)', () => {
 
       const { body } = await platform<StoreDetail>('POST', `/stores/${shop.storeId}/payments`, {
         amountCop: 49000,
-        periodStart: '2026-11-01',
-        periodEnd: '2026-11-30',
+        periodStart: inicioDeMes(2),
+        periodEnd: finDeMes(2),
         method: 'nequi',
       });
 
-      expect(body).toMatchObject({ status: 'SUSPENDED', currentPeriodEnd: '2026-11-30' });
+      expect(body).toMatchObject({ status: 'SUSPENDED', currentPeriodEnd: finDeMes(2) });
 
       await platform('PATCH', `/stores/${shop.storeId}/status`, { status: 'ACTIVE' });
     });
@@ -287,7 +308,7 @@ describe('Plataforma (e2e)', () => {
         plan: { code: 'basico', maxProducts: 1 },
         status: 'ACTIVE',
         storeStatus: 'ACTIVE',
-        currentPeriodEnd: '2026-11-30',
+        currentPeriodEnd: finDeMes(2),
         usage: { products: 1, ordersThisMonth: 0 },
       });
       expect(body.daysLeft).toBeGreaterThan(0);

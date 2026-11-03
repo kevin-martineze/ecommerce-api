@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { PaymentWidgetDto } from '@shared/dtos/payments/payments.dto';
 import { QueryBoolean, Trim } from '@shared/dtos/transforms';
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,13 @@ export class SubscriptionCheckoutDto {
 
   @ApiProperty()
   amountCop!: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: PaymentWidgetDto,
+    description: 'Config del widget embebido; null si la pasarela no tiene widget.',
+  })
+  widget!: PaymentWidgetDto | null;
 }
 
 export class SubscriptionPaymentDto {

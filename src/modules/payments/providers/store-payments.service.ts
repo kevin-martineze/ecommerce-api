@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Env } from '@shared/config/env';
 import { ConnectPaymentsDto, PaymentAccountDto } from '@shared/dtos/payments/payments.dto';
 import { GatewayCredentials } from '@shared/payments/gateway';
 import { open, seal } from '@shared/payments/secret-box';
+import { checkWompiKeys, wompiModeOf } from '@shared/payments/wompi-keys';
 import { PrismaService } from '@db/prisma.service';
 
 /**
@@ -54,11 +60,37 @@ export class StorePaymentsService {
       publicKey: account?.publicKey ?? null,
       eventsUrl: this.eventsUrl(storeId),
       updatedAt: account?.updatedAt ?? null,
+      merchantName: account?.merchantName ?? null,
+      mode: account ? wompiModeOf(account.publicKey) : null,
+      lastEventAt: account?.lastEventAt ?? null,
     };
   }
 
+  /**
+   * Verifica las llaves contra Wompi antes de guardarlas. Si no cuadran, no se
+   * guarda nada: una cuenta mal conectada no se nota hasta el primer cobro.
+   */
   async connect(storeId: string, dto: ConnectPaymentsDto): Promise<PaymentAccountDto> {
     const secret = this.secret;
+    const check = await checkWompiKeys(dto.publicKey, dto.privateKey);
+
+    if (!check.ok) {
+      if (check.reason === 'unreachable') {
+        throw new ServiceUnavailableException(
+          'No pudimos hablar con Wompi para verificar las llaves. Inténtalo otra vez en unos minutos.',
+        );
+      }
+
+      if (check.reason === 'mixed') {
+        throw new BadRequestException(
+          'Las dos llaves tienen que ser del mismo modo: las dos de pruebas o las dos de producción.',
+        );
+      }
+
+      throw new BadRequestException(
+        'Wompi no reconoce esa llave pública. Revisa que la hayas copiado entera.',
+      );
+    }
 
     await this.prisma.forStore(storeId, (tx) =>
       tx.storePaymentAccount.upsert({
@@ -69,6 +101,7 @@ export class StorePaymentsService {
           privateKeySealed: seal(dto.privateKey, secret),
           integritySecretSealed: seal(dto.integritySecret, secret),
           eventsSecretSealed: seal(dto.eventsSecret, secret),
+          merchantName: check.merchantName,
           active: true,
         },
         update: {
@@ -76,6 +109,9 @@ export class StorePaymentsService {
           privateKeySealed: seal(dto.privateKey, secret),
           integritySecretSealed: seal(dto.integritySecret, secret),
           eventsSecretSealed: seal(dto.eventsSecret, secret),
+          merchantName: check.merchantName,
+          // Otras llaves, otra cuenta: el último aviso de la anterior ya no cuenta.
+          lastEventAt: null,
           active: true,
         },
       }),
@@ -98,6 +134,16 @@ export class StorePaymentsService {
     });
 
     return this.get(storeId);
+  }
+
+  /** Marca que la pasarela nos avisó con una firma válida. Solo lo llama el evento verificado. */
+  async markEventReceived(storeId: string): Promise<void> {
+    await this.prisma.forStore(storeId, (tx) =>
+      tx.storePaymentAccount.updateMany({
+        where: { storeId },
+        data: { lastEventAt: new Date() },
+      }),
+    );
   }
 
   /** Las llaves de la tienda, descifradas. `null` si no cobra en línea. */

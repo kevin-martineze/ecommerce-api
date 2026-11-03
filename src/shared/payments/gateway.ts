@@ -30,10 +30,27 @@ export interface CheckoutInput {
   redirectUrl: string;
 }
 
+/**
+ * Lo que el navegador necesita para abrir el pago embebido de la pasarela, sin
+ * salir de la tienda. Los mismos datos que van en la URL del enlace, más la
+ * firma ya calculada.
+ */
+export interface WidgetConfig {
+  publicKey: string;
+  currency: 'COP';
+  amountInCents: number;
+  reference: string;
+  integritySignature: string;
+  redirectUrl: string;
+  customerEmail?: string;
+}
+
 export interface CheckoutSession {
   /** La página de la pasarela. Se le abre a quien paga. */
   url: string;
   reference: string;
+  /** Lo que el navegador necesita para abrir el pago embebido; `null` si la pasarela no tiene widget. */
+  widget: WidgetConfig | null;
 }
 
 /**

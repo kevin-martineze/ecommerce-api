@@ -38,7 +38,8 @@ export class SimulatedGateway extends PaymentGateway {
     url.searchParams.set('concepto', input.description);
     url.searchParams.set('volver', input.redirectUrl);
 
-    return { url: url.toString(), reference: input.reference };
+    // La página simulada sigue por redirección: no hay widget que abrir.
+    return { url: url.toString(), reference: input.reference, widget: null };
   }
 
   /**
