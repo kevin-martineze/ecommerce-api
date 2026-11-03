@@ -60,6 +60,25 @@ export class PaymentAccountDto {
 
   @ApiPropertyOptional({ nullable: true })
   updatedAt!: Date | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Nombre comercial de la cuenta en Wompi, tal como lo devuelve la verificación.',
+  })
+  merchantName!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['test', 'prod'],
+    description: 'En qué mundo de Wompi cobra la tienda, según el prefijo de su llave pública.',
+  })
+  mode!: 'test' | 'prod' | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Cuándo llegó el último aviso de la pasarela que pasó la firma.',
+  })
+  lastEventAt!: Date | null;
 }
 
 export class OrderCheckoutDto {

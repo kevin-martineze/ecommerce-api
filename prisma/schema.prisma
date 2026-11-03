@@ -161,6 +161,11 @@ model StorePaymentAccount {
   integritySecretSealed String @map("integrity_secret_sealed")
   eventsSecretSealed    String @map("events_secret_sealed")
 
+  /// Nombre comercial que devuelve Wompi (`data.name`) al verificar la llave.
+  merchantName String? @map("merchant_name")
+  /// Último evento de la pasarela que pasó la firma. Sirve para saber si Wompi ya nos está avisando.
+  lastEventAt  DateTime? @map("last_event_at") @db.Timestamptz(6)
+
   active    Boolean  @default(true)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

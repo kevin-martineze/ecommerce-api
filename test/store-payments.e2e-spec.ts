@@ -17,8 +17,38 @@ process.env.PAYMENTS_SECRET = 'un secreto de plataforma para las pruebas';
 
 jest.setTimeout(60_000);
 
+/**
+ * Wompi no se llama desde las pruebas: la cuenta de comercio se simula. Las
+ * demás peticiones (las de la propia API de pruebas) pasan de largo.
+ */
+const fetchReal = globalThis.fetch;
+
+function stubWompiMerchant(): void {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+
+    if (!url.includes('wompi.co/v1/merchants/info')) return fetchReal(input, init);
+
+    const llave = new Headers(init?.headers).get('x-merchant-public-key') ?? '';
+
+    if (llave === 'pub_test_no_existe') {
+      return Promise.resolve(new Response('{}', { status: 401 }));
+    }
+
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: { name: 'Tienda de prueba', email: 'x@y.co' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+  }) as typeof fetch;
+}
+
 interface Account {
   connected: boolean;
+  merchantName: string | null;
+  mode: 'test' | 'prod' | null;
+  lastEventAt: string | null;
   publicKey: string | null;
   eventsUrl: string;
   privateKey?: string;
@@ -82,6 +112,8 @@ describe('Pagos de la tienda (e2e)', () => {
   };
 
   beforeAll(async () => {
+    stubWompiMerchant();
+
     const { startTestApp } = await import('./utils/test-app');
 
     api = await startTestApp();
@@ -118,10 +150,32 @@ describe('Pagos de la tienda (e2e)', () => {
   });
 
   afterAll(async () => {
+    globalThis.fetch = fetchReal;
     await api?.close();
   });
 
   describe('conectar la cuenta', () => {
+    it('una llave que Wompi no reconoce no se guarda', async () => {
+      const { status, body } = await panel<Account & { message?: string }>('PUT', '/payments', {
+        ...LLAVES,
+        publicKey: 'pub_test_no_existe',
+      });
+
+      expect(status).toBe(400);
+      expect(body.message).toContain('Wompi no reconoce esa llave pública');
+      expect((await panel<Account>('GET', '/payments')).body.connected).toBe(false);
+    });
+
+    it('mezclar llaves de pruebas con las de producción no se guarda', async () => {
+      const { status, body } = await panel<Account & { message?: string }>('PUT', '/payments', {
+        ...LLAVES,
+        privateKey: 'prv_prod_llave_de_verdad',
+      });
+
+      expect(status).toBe(400);
+      expect(body.message).toContain('mismo modo');
+    });
+
     it('sin cuenta, la tienda no cobra en línea y lo dice', async () => {
       const vitrina = await pub<{ settings: { onlinePayments: boolean } }>('GET', '');
 
@@ -146,6 +200,11 @@ describe('Pagos de la tienda (e2e)', () => {
       expect(JSON.stringify(body)).not.toContain(LLAVES.privateKey);
       expect(JSON.stringify(body)).not.toContain(LLAVES.eventsSecret);
       expect(body.eventsUrl).toContain(shop.storeId);
+      // Verificada contra Wompi: el nombre comercial y el modo, sin datos de contacto.
+      expect(body.merchantName).toBe('Tienda de prueba');
+      expect(body.mode).toBe('test');
+      expect(body.lastEventAt).toBeNull();
+      expect(JSON.stringify(body)).not.toContain('x@y.co');
 
       // Y en la base tampoco están en claro: un volcado robado no puede ser
       // también el robo de la cuenta de comercio de la tienda.
