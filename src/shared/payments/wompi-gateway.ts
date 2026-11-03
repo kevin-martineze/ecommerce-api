@@ -15,7 +15,7 @@ import {
   SetupInfo,
   WidgetConfig,
 } from './gateway';
-import { fetchMerchant, WompiMerchant } from './wompi-keys';
+import { fetchMerchant, WompiMerchant, wompiBaseUrlOf } from './wompi-keys';
 
 /**
  * Wompi (Bancolombia): tarjetas, PSE, Nequi y botón Bancolombia.
@@ -130,9 +130,15 @@ export class WompiGateway extends PaymentGateway {
       throw new Error('Wompi no devolvió el token de aceptación de sus términos.');
     }
 
+    // El mismo entorno que consultó el merchant: el token de aceptación y la
+    // tokenización del navegador no pueden apuntar a mundos distintos.
+    const apiUrl = wompiBaseUrlOf(keys.publicKey);
+
+    if (!apiUrl) throw new Error('La llave pública no es de Wompi.');
+
     return {
       publicKey: keys.publicKey,
-      apiUrl: this.apiUrl,
+      apiUrl,
       acceptanceToken: merchant.acceptanceToken,
       termsUrl: merchant.termsUrl ?? '',
     };

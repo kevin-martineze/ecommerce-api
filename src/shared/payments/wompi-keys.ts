@@ -30,6 +30,20 @@ export function wompiModeOf(key: string): WompiMode | null {
 }
 
 /**
+ * La API de Wompi que corresponde a una llave: sandbox o producción, según su
+ * prefijo. `null` si la llave no es de ningún mundo.
+ *
+ * Es la única fuente de esa decisión: la consulta del merchant y la URL que el
+ * navegador usa para tokenizar salen de aquí, así que apuntan siempre al mismo
+ * entorno.
+ */
+export function wompiBaseUrlOf(key: string): string | null {
+  const mode = wompiModeOf(key);
+
+  return mode ? BASE_URL[mode] : null;
+}
+
+/**
  * Solo los campos que usamos. La respuesta trae más datos del comercio
  * (correo, teléfono, documento, contacto): no se leen, no se guardan.
  */
@@ -64,14 +78,14 @@ export type MerchantResult =
  * sale como `unreachable`, y una llave que Wompi no reconoce como `rejected`.
  */
 export async function fetchMerchant(publicKey: string): Promise<MerchantResult> {
-  const mode = wompiModeOf(publicKey);
+  const base = wompiBaseUrlOf(publicKey);
 
-  if (!mode) return { ok: false, reason: 'rejected' };
+  if (!base) return { ok: false, reason: 'rejected' };
 
   let response: Response;
 
   try {
-    response = await fetch(`${BASE_URL[mode]}/merchants/info`, {
+    response = await fetch(`${base}/merchants/info`, {
       headers: { 'x-merchant-public-key': publicKey },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

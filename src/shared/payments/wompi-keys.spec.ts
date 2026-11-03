@@ -145,4 +145,18 @@ describe('WompiGateway.setup', () => {
     expect(llamadas[0]?.url).toBe('https://sandbox.wompi.co/v1/merchants/info');
     expect(llamadas.some((llamada) => llamada.url.includes('/merchants/pub_'))).toBe(false);
   });
+
+  it('tokeniza en el mismo entorno que consultó el merchant, por prefijo y no por WOMPI_API_URL', async () => {
+    fetchFalso({ status: 200, body: respuestaComercio });
+    const gateway = new WompiGateway('https://checkout.wompi.co/p/', 'https://x.test/v1', {
+      publicKey: 'pub_prod_llave',
+      privateKey: 'prv_prod_llave',
+      integritySecret: 'prod_integrity_secreto',
+      eventsSecret: 'prod_events_secreto',
+    });
+
+    const setup = await gateway.setup();
+
+    expect(setup.apiUrl).toBe('https://production.wompi.co/v1');
+  });
 });
