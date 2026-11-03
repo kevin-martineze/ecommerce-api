@@ -45,6 +45,7 @@ interface Checkout {
   url: string;
   reference: string;
   amountCop: number;
+  widget: { publicKey: string } | null;
   error?: string;
 }
 
@@ -189,6 +190,8 @@ describe('Pagar el plan (e2e)', () => {
       expect(body.amountCop).toBe(99_000);
       expect(body.url).toContain('/pagos/simulado');
       expect(body.url).toContain(encodeURIComponent(body.reference));
+      // Con la pasarela simulada no hay widget: el plan también sigue por redirección.
+      expect(body.widget).toBeNull();
     });
 
     it('un plan que no se ofrece no se puede pagar', async () => {
