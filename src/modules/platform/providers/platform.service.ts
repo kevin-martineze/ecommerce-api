@@ -11,6 +11,11 @@ import {
   RecordPaymentDto,
   UpdateStoreStatusDto,
 } from '@shared/dtos/platform/platform.dto';
+import { ConfigService } from '@nestjs/config';
+import { Env } from '@shared/config/env';
+import { domainStatusView } from '@shared/domains/domain-status';
+import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
+import { publicUrl } from '@shared/tenancy/public-url';
 import { PrismaService } from '@db/prisma.service';
 
 import { toDateOnly, toPlanDto } from './subscriptions.service';
@@ -40,6 +45,8 @@ interface TenantSummary {
   subscription: SubscriptionRow | null;
   productCount: number;
   orderCount: number;
+  /** Si el plan vigente incluye dominio propio: decide si la dirección pública es la del dominio. */
+  planAllowsCustomDomain: boolean;
 }
 
 /** Hasta cuántas tiendas devuelve el listado. Una plataforma con más ya necesita paginar. */
@@ -59,7 +66,10 @@ const STORE_NOT_FOUND = 'Esa tienda no existe.';
  */
 @Injectable()
 export class PlatformService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<Env, true>,
+  ) {}
 
   async listPlans(): Promise<PlanDto[]> {
     const plans = await this.prisma.plan.findMany({ orderBy: { priceCop: 'asc' } });
@@ -103,7 +113,7 @@ export class PlatformService {
         continue;
       }
 
-      rows.push(toStoreDto(store, summary));
+      rows.push(toStoreDto(store, summary, this.config.get('FRONTEND_URL', { infer: true })));
     }
 
     return rows;
@@ -120,13 +130,14 @@ export class PlatformService {
         include: { recordedBy: { select: { email: true } } },
       });
       const summary: TenantSummary = {
+        planAllowsCustomDomain: await planAllowsCustomDomain(tx, storeId),
         subscription,
         productCount: await tx.product.count({ where: { storeId } }),
         orderCount: await tx.order.count({ where: { storeId } }),
       };
 
       return {
-        ...toStoreDto(store, summary),
+        ...toStoreDto(store, summary, this.config.get('FRONTEND_URL', { infer: true })),
         subscriptionNotes: subscription?.notes ?? null,
         payments: payments.map(toPaymentDto),
       };
@@ -278,6 +289,7 @@ export class PlatformService {
 
   private tenantSummary(storeId: string): Promise<TenantSummary> {
     return this.prisma.forStore(storeId, async (tx) => ({
+      planAllowsCustomDomain: await planAllowsCustomDomain(tx, storeId),
       subscription: await tx.subscription.findUnique({
         where: { storeId },
         select: { planCode: true, status: true, currentPeriodEnd: true, notes: true },
@@ -288,7 +300,11 @@ export class PlatformService {
   }
 }
 
-function toStoreDto(store: StoreWithMembers, summary: TenantSummary): PlatformStoreDto {
+function toStoreDto(
+  store: StoreWithMembers,
+  summary: TenantSummary,
+  frontendUrl: string,
+): PlatformStoreDto {
   const { subscription } = summary;
 
   return {
@@ -296,6 +312,19 @@ function toStoreDto(store: StoreWithMembers, summary: TenantSummary): PlatformSt
     name: store.name,
     slug: store.slug,
     customDomain: store.customDomain,
+    customDomainStatus: store.customDomainStatus
+      ? domainStatusView(store.customDomainStatus, summary.planAllowsCustomDomain)
+      : null,
+    publicUrl: publicUrl(
+      {
+        slug: store.slug,
+        status: store.status,
+        customDomain: store.customDomain,
+        customDomainStatus: store.customDomainStatus,
+        planAllowsCustomDomain: summary.planAllowsCustomDomain,
+      },
+      frontendUrl,
+    ),
     status: store.status,
     trialEndsAt: store.trialEndsAt,
     createdAt: store.createdAt,

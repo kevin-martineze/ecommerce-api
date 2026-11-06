@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   CreateRestockRequestDto,
   HomeDto,
@@ -7,11 +8,13 @@ import {
   StorefrontDto,
 } from '@shared/dtos/storefront/content.dto';
 import { Assistant } from '@shared/ai/assistant';
+import { Env } from '@shared/config/env';
 import { DEFAULT_TEMPLATE } from '@shared/content/templates';
 import { readTheme } from '@shared/content/theme';
 import { PaymentGateway } from '@shared/payments/gateway';
 import { PrismaService } from '@db/prisma.service';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
+import { publicUrl } from '@shared/tenancy/public-url';
 
 import { CARD_INCLUDE, NEWEST_FIRST, toProductCard } from './product-card';
 
@@ -25,6 +28,7 @@ export class StorefrontContentService {
     private readonly stores: PublicStoreResolver,
     private readonly assistant: Assistant,
     @Inject(PaymentGateway) private readonly gateway: PaymentGateway | null,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   /** Lo que el layout necesita en cada página: tienda, ajustes, categorías y colecciones. */
@@ -39,7 +43,7 @@ export class StorefrontContentService {
       // queda a la tienda es asunto de la tienda, no de quien la visita.
       const subscription = await tx.subscription.findUnique({
         where: { storeId: store.id },
-        select: { plan: { select: { aiRepliesPerMonth: true } } },
+        select: { plan: { select: { aiRepliesPerMonth: true, customDomain: true } } },
       });
 
       // Cobrar en línea depende de dos cosas: que la plataforma tenga pasarela
@@ -70,7 +74,21 @@ export class StorefrontContentService {
       });
 
       return {
-        store: { name: store.name, slug: store.slug },
+        store: {
+          name: store.name,
+          slug: store.slug,
+          // Dominio propio si está activo, si no el subdominio: la tienda pública enlaza así.
+          publicUrl: publicUrl(
+            {
+              slug: store.slug,
+              status: store.status,
+              customDomain: store.customDomain,
+              customDomainStatus: store.customDomainStatus,
+              planAllowsCustomDomain: subscription?.plan.customDomain ?? false,
+            },
+            this.config.get('FRONTEND_URL', { infer: true }),
+          ),
+        },
         // Toda tienda nace con ajustes (registro e importación los crean). El
         // valor vacío es solo para no tumbar la tienda si faltara la fila.
         settings: {

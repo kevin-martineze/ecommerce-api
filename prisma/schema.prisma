@@ -61,6 +61,18 @@ enum StoreStatus {
   @@map("store_status")
 }
 
+/// Estado de la conexión de una tienda con su dominio propio.
+enum CustomDomainStatus {
+  /// Registrado. Falta el DNS o la prueba de propiedad.
+  PENDING
+  /// Verificado y funcionando.
+  ACTIVE
+  /// Estaba activo y el chequeo diario lo encontró roto.
+  FAILED
+
+  @@map("custom_domain_status")
+}
+
 /// Un inquilino: la tienda que le vende a sus clientas.
 model Store {
   id   String @id @default(uuid()) @db.Uuid
@@ -74,6 +86,23 @@ model Store {
 
   /// Dominio propio, cuando la tienda contrata el plan que lo incluye.
   customDomain String? @unique @map("custom_domain")
+
+  /// Estado del dominio propio. Null junto con `customDomain`: lo fuerza un CHECK
+  /// en la migración. `disabled` no se guarda: lo calcula la API según el plan.
+  customDomainStatus CustomDomainStatus? @map("custom_domain_status")
+  /// Token aleatorio por tienda y por host: va en el TXT `_globerce.<host>` que
+  /// prueba que la tienda controla el dominio.
+  customDomainToken String? @map("custom_domain_token")
+  /// Los registros DNS que pidió el proveedor, tal como se le muestran a la dueña.
+  customDomainRecords Json? @map("custom_domain_records") @db.JsonB
+  /// Última vez que el DNS estuvo bien. Null mientras nunca lo estuvo.
+  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at") @db.Timestamptz(6)
+  /// Última revisión del DNS, la hecha por la dueña o por el chequeo diario.
+  customDomainCheckedAt DateTime? @map("custom_domain_checked_at") @db.Timestamptz(6)
+  /// Lo que falta para que el dominio funcione. Null cuando está bien.
+  customDomainError String? @map("custom_domain_error")
+  /// Cuándo se registró el host. Un `pending` de más de 7 días se libera solo.
+  customDomainAddedAt DateTime? @map("custom_domain_added_at") @db.Timestamptz(6)
 
   status StoreStatus @default(TRIAL)
 

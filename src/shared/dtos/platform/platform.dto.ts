@@ -214,6 +214,19 @@ export class PlatformStoreDto {
   @ApiProperty({ nullable: true })
   customDomain!: string | null;
 
+  @ApiProperty({
+    enum: ['pending', 'active', 'failed', 'disabled'],
+    nullable: true,
+    description:
+      'Estado del dominio propio. Lo calcula la API según el plan. Solo lectura en la consola.',
+  })
+  customDomainStatus!: 'pending' | 'active' | 'failed' | 'disabled' | null;
+
+  @ApiProperty({
+    description: 'Dirección pública de la tienda: dominio propio si está activo, o el subdominio.',
+  })
+  publicUrl!: string;
+
   @ApiProperty({ enum: StoreStatus })
   status!: StoreStatus;
 

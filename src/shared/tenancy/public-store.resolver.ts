@@ -1,3 +1,5 @@
+import type { CustomDomainStatus, StoreStatus } from '@prisma/client';
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@db/prisma.service';
 
@@ -5,6 +7,9 @@ export interface PublicStore {
   id: string;
   name: string;
   slug: string;
+  status: StoreStatus;
+  customDomain: string | null;
+  customDomainStatus: CustomDomainStatus | null;
 }
 
 /**
@@ -29,13 +34,27 @@ export class PublicStoreResolver {
   async resolve(slug: string): Promise<PublicStore> {
     const store = await this.prisma.store.findUnique({
       where: { slug },
-      select: { id: true, name: true, slug: true, status: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        customDomain: true,
+        customDomainStatus: true,
+      },
     });
 
     if (!store || store.status === 'SUSPENDED') {
       throw new NotFoundException('Esta tienda no existe.');
     }
 
-    return { id: store.id, name: store.name, slug: store.slug };
+    return {
+      id: store.id,
+      name: store.name,
+      slug: store.slug,
+      status: store.status,
+      customDomain: store.customDomain,
+      customDomainStatus: store.customDomainStatus,
+    };
   }
 }

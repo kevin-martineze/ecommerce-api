@@ -137,6 +137,16 @@ const envSchema = z.object({
    */
   PAYMENTS_DRIVER: z.enum(['none', 'simulated', 'wompi']).default('none'),
 
+  /**
+   * Dónde se registran los dominios propios de las tiendas.
+   *
+   * `log` no llama a nadie: los registros DNS son de ejemplo y la verificación
+   * se simula (un host que empieza por `pendiente.` no se verifica). Sirve para
+   * desarrollo y para que el frontend pruebe el flujo completo sin DNS.
+   * `vercel` registra el dominio en el proyecto de Vercel del frontend.
+   */
+  DOMAINS_DRIVER: z.enum(['log', 'vercel']).default('log'),
+
   /** El Checkout Web de Wompi. Cambia a `sandbox` para probar con llaves de prueba. */
   WOMPI_CHECKOUT_URL: z.string().url().default('https://checkout.wompi.co/p/'),
 

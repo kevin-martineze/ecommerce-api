@@ -11,6 +11,12 @@ export class PublicStoreDto {
 
   @ApiProperty()
   slug!: string;
+
+  @ApiProperty({
+    description:
+      'Dirección pública de la tienda: su dominio propio si está activo, o el subdominio.',
+  })
+  publicUrl!: string;
 }
 
 export class PublicSettingsDto {

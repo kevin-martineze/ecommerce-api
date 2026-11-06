@@ -103,6 +103,12 @@ export class StoreSettingsDto {
   @ApiProperty({ description: 'Si la tienda tiene asistente: lo deciden su plan y la plataforma.' })
   assistant!: boolean;
 
+  @ApiProperty({
+    description:
+      'Dirección pública de la tienda: su dominio propio si está activo, o el subdominio.',
+  })
+  publicUrl!: string;
+
   @ApiProperty()
   updatedAt!: Date;
 }
