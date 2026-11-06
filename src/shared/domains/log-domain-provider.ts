@@ -49,7 +49,7 @@ export class LogDomainProvider extends DomainProvider {
     const simulated: TxtResolver = {
       resolveTxt: () =>
         host.startsWith(PENDING_PREFIX)
-          ? Promise.reject(new Error('ENODATA'))
+          ? Promise.reject(Object.assign(new Error('ENODATA'), { code: 'ENODATA' }))
           : Promise.resolve([[ownershipValue(token)]]),
     };
 

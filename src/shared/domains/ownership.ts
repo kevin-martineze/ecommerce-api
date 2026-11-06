@@ -1,5 +1,7 @@
 import { resolveTxt } from 'node:dns/promises';
 
+import { DomainProviderError } from './domain-provider';
+
 /**
  * Prueba de propiedad: la tienda pone un TXT `_globerce.<host>` con su token.
  *
@@ -30,10 +32,16 @@ export function ownershipValue(token: string): string {
   return `globerce-verify=${token}`;
 }
 
+/** Lo que node:dns devuelve cuando el nombre no existe (ENOTFOUND, NXDOMAIN) o no tiene TXT (ENODATA). */
+const NO_RECORD = new Set(['ENOTFOUND', 'ENODATA']);
+
+const DNS_UNAVAILABLE = 'No pudimos revisar el DNS ahora. Intenta de nuevo en unos minutos.';
+
 /**
- * ¿Está el token en el TXT del host? Un nombre sin registro (NXDOMAIN, sin
- * datos) cuenta como "no", no como error: es justo el estado de quien todavía
- * no lo puso.
+ * ¿Está el token en el TXT del host? Un nombre sin registro cuenta como "no":
+ * es justo el estado de quien todavía no lo puso. Cualquier otro error (timeout,
+ * SERVFAIL, red) NO es "no": se relanza, para que un tropiezo del resolvedor no
+ * baje un dominio activo a fallido.
  */
 export async function hasOwnershipRecord(
   resolver: TxtResolver,
@@ -44,11 +52,23 @@ export async function hasOwnershipRecord(
 
   try {
     records = await resolver.resolveTxt(ownershipName(host));
-  } catch {
-    return false;
+  } catch (cause) {
+    if (isNoRecord(cause)) return false;
+
+    throw new DomainProviderError('unavailable', DNS_UNAVAILABLE);
   }
 
   const expected = ownershipValue(token);
 
   return records.some((parts) => parts.join('') === expected);
+}
+
+function isNoRecord(cause: unknown): boolean {
+  return (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'code' in cause &&
+    typeof cause.code === 'string' &&
+    NO_RECORD.has(cause.code)
+  );
 }

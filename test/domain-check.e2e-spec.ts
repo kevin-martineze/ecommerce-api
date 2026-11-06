@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
+import { DomainProvider, DomainProviderError } from '../src/shared/domains/domain-provider';
 import { DomainCheckService } from '../src/modules/domains/providers/domain-check.service';
 
 import { Session, startTestApp, TestApp } from './utils/test-app';
@@ -98,5 +99,55 @@ describe('revisión diaria de dominios', () => {
     const resolved = await api.call<{ status: string }>('GET', `/store-domains/www.${base}`);
 
     expect(resolved.body.status).toBe('active');
+  });
+
+  // El DNS real lo simula el proveedor: aquí se fuerza el mismo error que daría hasOwnershipRecord ante un timeout.
+  const dnsTimeout = () =>
+    new DomainProviderError(
+      'unavailable',
+      'No pudimos revisar el DNS ahora. Intenta de nuevo en unos minutos.',
+    );
+
+  it('un error de DNS pasajero no baja un dominio activo: cuenta como error y sigue active', async () => {
+    const provider = api.get(DomainProvider);
+    const spy = jest.spyOn(provider, 'verifyOwnership').mockRejectedValueOnce(dnsTimeout());
+
+    try {
+      const summary = await checker.runDailyCheck({ storeIds: [buena.storeId] });
+
+      expect(summary).toEqual({ checked: 1, activated: 0, failed: 0, released: 0, errors: 1 });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const resolved = await api.call<{ status: string }>('GET', `/store-domains/www.${base}`);
+
+    expect(resolved.body.status).toBe('active');
+  });
+
+  it('verificar con el DNS caído responde 503 y no cambia el estado guardado', async () => {
+    const provider = api.get(DomainProvider);
+    const spy = jest.spyOn(provider, 'verifyOwnership').mockRejectedValueOnce(dnsTimeout());
+
+    try {
+      const { status, body } = await api.call<{ message: string }>(
+        'POST',
+        `/stores/${buena.storeId}/domain/verify`,
+        buena,
+      );
+
+      expect(status).toBe(503);
+      expect(body.message).toMatch(/No pudimos revisar el DNS/);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const state = await api.call<{ domain: DomainBody }>(
+      'GET',
+      `/stores/${buena.storeId}/domain`,
+      buena,
+    );
+
+    expect(state.body.domain).toMatchObject({ status: 'active' });
   });
 });

@@ -55,7 +55,9 @@ function fakeVercel(routes: Record<string, Reply>) {
 function fakeDns(records: Record<string, string[][]>): TxtResolver {
   return {
     resolveTxt: (name) =>
-      records[name] ? Promise.resolve(records[name]) : Promise.reject(new Error('ENODATA')),
+      records[name]
+        ? Promise.resolve(records[name])
+        : Promise.reject(Object.assign(new Error('ENODATA'), { code: 'ENODATA' })),
   };
 }
 

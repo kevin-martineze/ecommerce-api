@@ -6,7 +6,7 @@ function fakeDns(records: Record<string, string[][]>): TxtResolver {
     resolveTxt: (name) => {
       const found = records[name];
 
-      if (!found) return Promise.reject(new Error('ENODATA'));
+      if (!found) return Promise.reject(Object.assign(new Error('ENODATA'), { code: 'ENODATA' }));
 
       return Promise.resolve(found);
     },
@@ -46,4 +46,28 @@ describe('hasOwnershipRecord', () => {
     expect(ownershipName('tienda.com')).toBe('_globerce.tienda.com');
     expect(ownershipName('www.tienda.com')).toBe('_globerce.www.tienda.com');
   });
+});
+
+/** Un DNS que falla con un código concreto de node:dns (ETIMEOUT, ESERVFAIL…). */
+function failingDns(code: string): TxtResolver {
+  return {
+    resolveTxt: () => Promise.reject(Object.assign(new Error(code), { code })),
+  };
+}
+
+describe('hasOwnershipRecord ante errores de DNS', () => {
+  const host = 'www.tienda.com';
+
+  it.each(['ENOTFOUND', 'ENODATA'])('%s es "sin registro": devuelve false', async (code) => {
+    await expect(hasOwnershipRecord(failingDns(code), host, 'tok')).resolves.toBe(false);
+  });
+
+  it.each(['ETIMEOUT', 'ESERVFAIL', 'ECONNREFUSED'])(
+    '%s no es "sin registro": se lanza como proveedor no disponible',
+    async (code) => {
+      await expect(hasOwnershipRecord(failingDns(code), host, 'tok')).rejects.toMatchObject({
+        kind: 'unavailable',
+      });
+    },
+  );
 });
