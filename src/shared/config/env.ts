@@ -147,6 +147,15 @@ const envSchema = z.object({
    */
   DOMAINS_DRIVER: z.enum(['log', 'vercel']).default('log'),
 
+  /**
+   * Solo con `DOMAINS_DRIVER=vercel`. Token de una cuenta de Vercel con permiso
+   * sobre el proyecto del frontend; el proyecto es el que recibe los dominios.
+   */
+  VERCEL_API_TOKEN: z.string().min(10).optional(),
+  VERCEL_PROJECT_ID: z.string().min(1).optional(),
+  /** Equipo de Vercel, si el proyecto pertenece a uno. Sin esto, la cuenta personal. */
+  VERCEL_TEAM_ID: z.string().min(1).optional(),
+
   /** El Checkout Web de Wompi. Cambia a `sandbox` para probar con llaves de prueba. */
   WOMPI_CHECKOUT_URL: z.string().url().default('https://checkout.wompi.co/p/'),
 
@@ -220,6 +229,18 @@ const envSchemaWithRules = envSchema.superRefine((env, ctx) => {
           code: z.ZodIssueCode.custom,
           path: [key],
           message: 'Obligatoria cuando PAYMENTS_DRIVER=wompi.',
+        });
+      }
+    }
+  }
+
+  if (env.DOMAINS_DRIVER === 'vercel') {
+    for (const key of ['VERCEL_API_TOKEN', 'VERCEL_PROJECT_ID'] as const) {
+      if (!env[key]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: 'Obligatoria cuando DOMAINS_DRIVER=vercel.',
         });
       }
     }

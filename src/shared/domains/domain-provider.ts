@@ -37,3 +37,18 @@ export abstract class DomainProvider {
   /** Quita el host de la plataforma. Quitar uno que no existe no falla. */
   abstract remove(host: string): Promise<void>;
 }
+
+/**
+ * Un fallo del proveedor, ya dicho para la dueña. `taken` y `invalid` son
+ * respuestas del proveedor; `unavailable` es que no pudo responder: en ese caso
+ * el estado guardado no cambia y la dueña puede reintentar.
+ */
+export class DomainProviderError extends Error {
+  constructor(
+    readonly kind: 'taken' | 'invalid' | 'unavailable',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'DomainProviderError';
+  }
+}

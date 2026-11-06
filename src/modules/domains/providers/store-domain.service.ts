@@ -6,12 +6,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CustomDomainStatus, Prisma } from '@prisma/client';
 import { Env } from '@shared/config/env';
 import { DnsRecordDto, StoreDomainDto, StoreDomainStateDto } from '@shared/dtos/domains/domain.dto';
-import { DnsRecord, DomainProvider } from '@shared/domains/domain-provider';
+import { DnsRecord, DomainProvider, DomainProviderError } from '@shared/domains/domain-provider';
 import { domainStatusView } from '@shared/domains/domain-status';
 import { checkCustomHost, hostOf, splitHost } from '@shared/domains/host';
 import { ownershipValue } from '@shared/domains/ownership';
@@ -96,13 +97,15 @@ export class StoreDomainService {
       if (taken && taken.id !== storeId) throw new ConflictException(TAKEN);
 
       const token = randomBytes(24).toString('hex');
-      const inspection = await this.provider.inspect(check.host);
+
+      // Primero el alta del nuevo: si el proveedor no responde, el anterior sigue como estaba.
+      const inspection = await providerCall(() => this.provider.inspect(check.host));
+
+      await providerCall(() => this.provider.add(check.host));
 
       if (current) {
-        await this.provider.remove(current.host);
+        await providerCall(() => this.provider.remove(current.host));
       }
-
-      await this.provider.add(check.host);
 
       const records = [...inspection.records, ownershipRecord(check.apex, check.label, token)];
 
@@ -146,8 +149,11 @@ export class StoreDomainService {
 
       if (!current) throw new NotFoundException(NOTHING_TO_VERIFY);
 
-      const inspection = await this.provider.inspect(current.host);
-      const owned = await this.provider.verifyOwnership(current.host, current.token);
+      // Primero la propiedad (Vercel pide que el TXT ya esté para aceptar su desafío); luego el enrutamiento.
+      const owned = await providerCall(() =>
+        this.provider.verifyOwnership(current.host, current.token),
+      );
+      const inspection = await providerCall(() => this.provider.inspect(current.host));
       const ok = inspection.configured && owned;
 
       const status: CustomDomainStatus = ok
@@ -169,7 +175,7 @@ export class StoreDomainService {
           customDomainRecords: records as unknown as Prisma.InputJsonValue,
           customDomainCheckedAt: new Date(),
           customDomainVerifiedAt: ok ? new Date() : store.customDomainVerifiedAt,
-          customDomainError: ok ? null : inspection.configured ? MISSING_TXT : inspection.error,
+          customDomainError: ok ? null : !inspection.configured ? inspection.error : MISSING_TXT,
         },
         select: DOMAIN_SELECT,
       });
@@ -185,7 +191,7 @@ export class StoreDomainService {
       const current = activeDomain(store);
 
       if (current) {
-        await this.provider.remove(current.host);
+        await providerCall(() => this.provider.remove(current.host));
       }
 
       await tx.store.update({
@@ -210,6 +216,23 @@ export class StoreDomainService {
     if (!store) throw new NotFoundException('La tienda no existe.');
 
     return store;
+  }
+}
+
+/**
+ * Llama al proveedor y traduce sus fallos a respuestas para la dueña. Ningún
+ * fallo llega a la base: si el proveedor no responde, el estado no cambia.
+ */
+export async function providerCall<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (cause) {
+    if (!(cause instanceof DomainProviderError)) throw cause;
+
+    if (cause.kind === 'taken') throw new ConflictException(cause.message);
+    if (cause.kind === 'invalid') throw new BadRequestException(cause.message);
+
+    throw new ServiceUnavailableException(cause.message);
   }
 }
 
