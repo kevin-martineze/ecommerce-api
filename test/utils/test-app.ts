@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 
+import { Type } from '@nestjs/common';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import fastifyMultipart from '@fastify/multipart';
@@ -108,6 +109,8 @@ export interface TestApp {
   forgetStore(storeId: string): void;
   /** Conexión con el rol dueño, para preparar estados que la API no deja crear. */
   withOwner<T>(work: (client: Client) => Promise<T>): Promise<T>;
+  /** Un servicio de la aplicación levantada, para probar tareas que no pasan por HTTP. */
+  get<T>(type: Type<T>): T;
   close(): Promise<void>;
 }
 
@@ -243,6 +246,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
     withoutSecret,
     upload,
     withOwner,
+    get: <T>(type: Type<T>): T => app.get(type),
     mediaDir,
 
     forgetStore(storeId: string): void {
