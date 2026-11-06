@@ -227,16 +227,18 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
 
 ## 7. Decisiones registradas
 
-| Decisión                            | Alternativa descartada       | Por qué                                                                                       |
-| ----------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------- |
-| Un `store_id` por tabla, base común | Schema o proyecto por tienda | Una migración sirve para todas; por schema hay que aplicarlas N veces y PostgREST no lo lleva |
-| Subdominio por tienda               | Path (`/t/slug`)             | Cookies aisladas, mejor SEO, y el dominio propio queda como mejora del plan alto              |
-| Cobro manual al principio           | Pasarela desde el día 1      | El modelo de datos de suscripción queda listo; integrar Wompi o Stripe es enchufar después    |
-| Prisma                              | Drizzle, SQL crudo           | Es lo que ya se usa en `bookings-api`, el otro API sobre Postgres                             |
-| Fastify                             | Express                      | Es la convención de los `micro-*`, con helmet, cors y rate-limit ya resueltos                 |
-| Dinero en enteros COP               | Decimal o float              | El peso no usa decimales y un float no puede representar dinero                               |
-| Slugs únicos por tienda             | Únicos globales              | Que dos tiendas tengan `vestido-negro` es lo normal, no un conflicto                          |
-| `PlatformAdmin` en tabla aparte     | Campo `role` en `users`      | Un booleano en `users` lo puede escribir cualquier `update` mal filtrado                      |
+| Decisión                            | Alternativa descartada       | Por qué                                                                                                          |
+| ----------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Un `store_id` por tabla, base común | Schema o proyecto por tienda | Una migración sirve para todas; por schema hay que aplicarlas N veces y PostgREST no lo lleva                    |
+| Subdominio por tienda               | Path (`/t/slug`)             | Cookies aisladas, mejor SEO, y el dominio propio queda como mejora del plan alto                                 |
+| Cobro manual al principio           | Pasarela desde el día 1      | El modelo de datos de suscripción queda listo; integrar Wompi o Stripe es enchufar después                       |
+| Prisma                              | Drizzle, SQL crudo           | Es lo que ya se usa en `bookings-api`, el otro API sobre Postgres                                                |
+| Fastify                             | Express                      | Es la convención de los `micro-*`, con helmet, cors y rate-limit ya resueltos                                    |
+| Dinero en enteros COP               | Decimal o float              | El peso no usa decimales y un float no puede representar dinero                                                  |
+| Slugs únicos por tienda             | Únicos globales              | Que dos tiendas tengan `vestido-negro` es lo normal, no un conflicto                                             |
+| `PlatformAdmin` en tabla aparte     | Campo `role` en `users`      | Un booleano en `users` lo puede escribir cualquier `update` mal filtrado                                         |
+| Vercel Domains para el enrutamiento | Cloudflare for SaaS          | El front ya está en Vercel; Cloudflare sumaba un proxy y otro certificado que mantener                           |
+| TXT `_globerce.<host>` propio       | Confiar en el CNAME a Vercel | El CNAME es igual para todos: sin el TXT, una tienda podía quedarse con un dominio ajeno que aún apunta a Vercel |
 
 ---
 
@@ -289,18 +291,13 @@ dominio. Cuando dos dominios necesitan lo mismo, sube a `shared/`.
       pasarela. Ver § 13.
 - [x] **Fase 12 — Plantillas de la vitrina.** Dos diseños, elegidos en el
       onboarding y cambiables desde Portada sin tocar el contenido. Ver § 11.
+- [x] **Fase 13 — Dominios propios.** La API resuelve la tienda por host, la
+      dueña conecta su dominio desde el panel con verificación DNS, y un chequeo
+      diario activa, marca como fallidos y libera. Proveedor `log` para
+      desarrollo y `vercel` en producción. Ver § 10.
 
 ### Pendiente
 
-- **Dominios propios.** `stores.custom_domain` existe y el plan Pro lo
-  incluye, pero ni la API resuelve una tienda por dominio ni el frontend lo
-  pide. Hace falta un `GET /public/by-domain/:host` y, en el despliegue, el
-  certificado de cada dominio.
-- **El access token sobrevive a su sesión.** Restablecer o cambiar la
-  contraseña cierra los refresh tokens, pero un access token ya emitido
-  sigue valiendo hasta su vencimiento (15 minutos). Cerrarlo antes exige
-  que el guard compare el `iat` con una marca por cuenta
-  (`sessions_valid_after`), una consulta más por petición.
 - **Cobro automático.** Los pagos se registran a mano desde la consola.
 - **API no expuesta.** El límite por IP confía en `X-Forwarded-For` del
   frontend (§ 3): en producción la API tiene que quedar detrás de una red
@@ -472,6 +469,24 @@ la petición muere con ECONNREFUSED y el login responde «No pudimos conectar co
 el servidor», que parece un problema de credenciales y no lo es.
 
 ---
+
+### Dominios propios
+
+La tienda sirve en `www.sutienda.com` además de su subdominio. Cómo se decide
+qué tienda es cada host, y quién responde:
+
+- `GET /v1/store-domains/:host` (sin sesión) devuelve el slug y el estado. Lo
+  consume el frontend al recibir cada petición de un host que no es suyo.
+- `publicUrl` vale `https://<dominio>` solo si el dominio está activo, el plan
+  lo incluye y la tienda no está suspendida. Si no, el subdominio. Una sola
+  función la calcula (`shared/tenancy/public-url.ts`).
+- El dominio se verifica en dos pasos: un TXT `_globerce.<host>` con un token
+  por tienda (prueba que la tienda lo controla) y el registro de enrutamiento
+  que pide el proveedor. El chequeo diario (`pnpm platform:check-domains`)
+  repite la prueba: un activo que se rompe pasa a `failed`, y un pendiente de
+  más de 7 días se libera para que nadie acapare un host.
+- El cobro de Wompi acepta el dominio propio de ESA tienda como vuelta, solo si
+  está activo y por https. Ver `shared/payments/return-url.ts`.
 
 ## 11. Las plantillas de la vitrina
 

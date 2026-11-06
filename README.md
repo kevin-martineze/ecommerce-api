@@ -71,6 +71,20 @@ pnpm start:dev
 
 ---
 
+## Dominios propios
+
+La tienda puede servir en su propio dominio (`www.sutienda.com`), si el plan lo
+incluye. Variables:
+
+- `DOMAINS_DRIVER`: `log` (por defecto, desarrollo y pruebas) o `vercel`.
+- `VERCEL_API_TOKEN` y `VERCEL_PROJECT_ID`: obligatorias solo con `vercel`.
+  `VERCEL_TEAM_ID` si el proyecto pertenece a un equipo.
+- `FRONTEND_URL` tiene que ser el mismo host que `PUBLIC_STORE_ROOT_DOMAIN` del
+  frontend: de ahí sale la dirección de las tiendas en subdominio.
+
+El chequeo diario va en el cron del servidor: `pnpm platform:check-domains`.
+Detalles en `docs/ARCHITECTURE.md` § 10.
+
 ## Comandos
 
 | Comando             | Qué hace                                   |
