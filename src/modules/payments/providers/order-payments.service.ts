@@ -1,9 +1,13 @@
+import type { CustomDomainStatus, StoreStatus } from '@prisma/client';
+
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Env } from '@shared/config/env';
 import { OrderCheckoutDto, PaymentLinkDto } from '@shared/dtos/payments/payments.dto';
 import { PaymentEvent, PaymentGateway } from '@shared/payments/gateway';
+import { safeReturnUrl } from '@shared/payments/return-url';
 import { PrismaService } from '@db/prisma.service';
+import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
 
 import { StorePaymentsService } from './store-payments.service';
@@ -71,12 +75,14 @@ export class OrderPaymentsService {
       throw new BadRequestException('Ese pedido está cancelado.');
     }
 
+    const redirectUrl = await this.returnUrl(store, dto.redirectUrl);
+
     const session = gateway.checkout(
       {
         reference: `${ORDER_PREFIX}-${order.id}`,
         amountCop: order.total,
         description: `${store.name} · pedido #${number}`,
-        redirectUrl: this.safeRedirect(dto.redirectUrl),
+        redirectUrl,
       },
       credentials,
     );
@@ -165,23 +171,33 @@ export class OrderPaymentsService {
   }
 
   /**
-   * La vuelta de la pasarela tiene que caer en una dirección nuestra.
-   *
-   * Sin esto, quien arma el cobro elige a dónde va la clienta después de
-   * pagar, que es un sitio de phishing esperando a alguien que acaba de
-   * escribir los datos de su tarjeta.
+   * La vuelta de la pasarela: nuestra, o el dominio propio de esta tienda si
+   * está vivo (ver safeReturnUrl). Lo demás se rechaza.
    */
-  private safeRedirect(url: string): string {
-    const frontend = new URL(this.config.get('FRONTEND_URL', { infer: true }));
-    const destino = new URL(url);
-    const mismoDominio =
-      destino.hostname === frontend.hostname || destino.hostname.endsWith(`.${frontend.hostname}`);
+  private async returnUrl(
+    store: {
+      id: string;
+      slug: string;
+      status: StoreStatus;
+      customDomain: string | null;
+      customDomainStatus: CustomDomainStatus | null;
+    },
+    url: string,
+  ): Promise<string> {
+    const allowsCustomDomain = await this.prisma.forStore(store.id, (tx) =>
+      planAllowsCustomDomain(tx, store.id),
+    );
 
-    if (!mismoDominio) {
+    const safe = safeReturnUrl(url, {
+      frontendHost: new URL(this.config.get('FRONTEND_URL', { infer: true })).hostname,
+      store: { ...store, planAllowsCustomDomain: allowsCustomDomain },
+    });
+
+    if (!safe) {
       throw new BadRequestException('La dirección de vuelta no es de esta tienda.');
     }
 
-    return destino.toString();
+    return safe;
   }
 }
 
