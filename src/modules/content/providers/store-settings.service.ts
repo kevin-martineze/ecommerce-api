@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, StoreSettings } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { Env } from '@shared/config/env';
@@ -9,6 +9,9 @@ import {
   UpdateStoreSettingsDto,
   UpdateStoreThemeDto,
 } from '@shared/dtos/content/settings.dto';
+import { processLogo, newStoragePath } from '@shared/media/images';
+import { Upload } from '@shared/media/upload';
+import { MediaStorage } from '@shared/storage/media-storage';
 import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
 import { assertCollectionInStore } from '@shared/tenancy/store-references';
 import { publicUrl } from '@shared/tenancy/public-url';
@@ -28,10 +31,13 @@ const STORE_FIELDS = {
 
 @Injectable()
 export class StoreSettingsService {
+  private readonly logger = new Logger(StoreSettingsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly assistant: Assistant,
     private readonly config: ConfigService<Env, true>,
+    private readonly storage: MediaStorage,
   ) {}
 
   /**
@@ -116,6 +122,97 @@ export class StoreSettingsService {
       );
     });
   }
+
+  /**
+   * Sube el logo. Sigue el orden de `CollectionsService.setHero`: la imagen se
+   * convierte antes de abrir la transacción, el archivo nuevo se escribe
+   * dentro, y el anterior se borra solo cuando el nuevo ya está guardado.
+   */
+  async setLogo(storeId: string, upload: Upload): Promise<StoreSettingsDto> {
+    const logo = await processLogo(upload.buffer);
+    const storagePath = newStoragePath(storeId, 'branding', 'logo');
+    let previous: string | null = null;
+
+    try {
+      await this.prisma.forStore(storeId, async (tx) => {
+        const current = await tx.storeSettings.findUnique({
+          where: { storeId },
+          select: { logoStoragePath: true },
+        });
+
+        if (!current) {
+          throw new NotFoundException(MISSING);
+        }
+
+        previous = current.logoStoragePath;
+
+        await this.storage.put([
+          { key: logoKey(storagePath), body: logo, contentType: 'image/webp' },
+        ]);
+
+        await tx.storeSettings.update({
+          where: { storeId },
+          data: {
+            logoUrl: this.storage.publicUrl(logoKey(storagePath)),
+            logoStoragePath: storagePath,
+          },
+        });
+      });
+    } catch (error) {
+      await this.discard([logoKey(storagePath)]);
+      throw error;
+    }
+
+    if (previous) {
+      await this.discard([logoKey(previous)]);
+    }
+
+    return this.get(storeId);
+  }
+
+  /** Quita el logo: la tienda vuelve a mostrar el nombre. */
+  async removeLogo(storeId: string): Promise<StoreSettingsDto> {
+    const previous = await this.prisma.forStore(storeId, async (tx) => {
+      const current = await tx.storeSettings.findUnique({
+        where: { storeId },
+        select: { logoStoragePath: true },
+      });
+
+      if (!current) {
+        throw new NotFoundException(MISSING);
+      }
+
+      await tx.storeSettings.update({
+        where: { storeId },
+        data: { logoUrl: null, logoStoragePath: null },
+      });
+
+      return current.logoStoragePath;
+    });
+
+    if (previous) {
+      await this.discard([logoKey(previous)]);
+    }
+
+    return this.get(storeId);
+  }
+
+  private async discard(keys: string[]): Promise<void> {
+    try {
+      await this.storage.remove(keys);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo borrar el logo del almacenamiento: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+}
+
+/** El logo es un solo archivo WebP colgado de la ruta base que se guarda. */
+function logoKey(storagePath: string): string {
+  return `${storagePath}.webp`;
 }
 
 /**
@@ -161,6 +258,7 @@ function toDto(
     heroCollectionId: settings.heroCollectionId,
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,
+    logoUrl: settings.logoUrl,
     template: settings.template,
     theme: readTheme(settings.theme),
     assistant,

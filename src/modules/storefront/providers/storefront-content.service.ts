@@ -99,6 +99,7 @@ export class StorefrontContentService {
           heroCollectionId: settings?.heroCollectionId ?? null,
           heroTitle: settings?.heroTitle ?? null,
           heroSubtitle: settings?.heroSubtitle ?? null,
+          logoUrl: settings?.logoUrl ?? null,
           template: settings?.template ?? DEFAULT_TEMPLATE,
           theme: readTheme(settings?.theme ?? null),
           assistant: this.assistant.available && (subscription?.plan.aiRepliesPerMonth ?? 0) > 0,

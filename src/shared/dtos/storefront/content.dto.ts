@@ -44,6 +44,9 @@ export class PublicSettingsDto {
   @ApiProperty({ nullable: true })
   heroSubtitle!: string | null;
 
+  @ApiProperty({ nullable: true, description: 'Logo de la tienda. Null: se muestra el nombre.' })
+  logoUrl!: string | null;
+
   @ApiProperty({ enum: STOREFRONT_TEMPLATES, description: 'Con qué diseño se pinta la vitrina.' })
   template!: string;
 
