@@ -94,3 +94,26 @@ export function imageObjects(storagePath: string, processed: ProcessedImage): St
     contentType: 'image/webp',
   }));
 }
+
+/**
+ * Logo de la tienda: una sola imagen, WebP, que cabe en 640×240 sin agrandarse.
+ *
+ * Conserva la transparencia: el logo se pone sobre la cabecera, no sobre un
+ * fondo blanco. Un SVG también entra: `sharp` lo rasteriza, y nunca se guarda
+ * ni se sirve el original.
+ */
+export const LOGO_BOX = { width: 640, height: 240 } as const;
+
+export async function processLogo(original: Buffer): Promise<Buffer> {
+  try {
+    await sharp(original).metadata();
+  } catch {
+    throw new BadRequestException('El archivo no es una imagen.');
+  }
+
+  return sharp(original)
+    .rotate()
+    .resize({ ...LOGO_BOX, fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 90 })
+    .toBuffer();
+}

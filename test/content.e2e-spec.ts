@@ -223,6 +223,105 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
     });
   });
 
+  describe('logo', () => {
+    const logoPath = () => `/stores/${shop.storeId}/settings/logo`;
+
+    /** La clave del archivo es lo que la URL pública lleva después de `stores/`. */
+    const logoFile = (url: string) => join(api.mediaDir, url.slice(url.indexOf('stores/')));
+
+    it('sin logo, la tienda sigue mostrando el nombre', async () => {
+      const ajustes = await panel<{ logoUrl: string | null }>('GET', '/settings');
+
+      expect(ajustes.body.logoUrl).toBeNull();
+
+      const publico = await pub<{ settings: { logoUrl: string | null } }>('');
+
+      expect(publico.body.settings.logoUrl).toBeNull();
+    });
+
+    it('sube el logo, lo publica en la tienda y el anterior se borra al reemplazarlo', async () => {
+      const first = await api.upload<{ logoUrl: string }>('PUT', logoPath(), shop, await photo());
+
+      expect(first.status).toBe(200);
+      expect(first.body.logoUrl).toMatch(/\.webp$/);
+      expect(existsSync(logoFile(first.body.logoUrl))).toBe(true);
+
+      const publico = await pub<{ settings: { logoUrl: string | null } }>('');
+
+      expect(publico.body.settings.logoUrl).toBe(first.body.logoUrl);
+
+      const second = await api.upload<{ logoUrl: string }>('PUT', logoPath(), shop, await photo());
+
+      expect(second.status).toBe(200);
+      expect(second.body.logoUrl).not.toBe(first.body.logoUrl);
+      expect(existsSync(logoFile(first.body.logoUrl))).toBe(false);
+      expect(existsSync(logoFile(second.body.logoUrl))).toBe(true);
+    });
+
+    it('el logo se guarda como WebP de como máximo 640×240', async () => {
+      const { body, status } = await api.upload<{ logoUrl: string }>(
+        'PUT',
+        logoPath(),
+        shop,
+        await photo(1600, 1200),
+      );
+
+      expect(status).toBe(200);
+
+      const { width, height } = await sharp(logoFile(body.logoUrl)).metadata();
+
+      expect(width).toBeLessThanOrEqual(640);
+      expect(height).toBeLessThanOrEqual(240);
+    });
+
+    it('un SVG se rasteriza: se guarda el WebP, nunca el original', async () => {
+      const svg: TestFile = {
+        field: 'file',
+        filename: 'logo.svg',
+        contentType: 'image/svg+xml',
+        data: Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50"><rect width="200" height="50" fill="#000"/></svg>',
+        ),
+      };
+
+      const { body, status } = await api.upload<{ logoUrl: string }>('PUT', logoPath(), shop, svg);
+
+      expect(status).toBe(200);
+      expect(body.logoUrl).toMatch(/\.webp$/);
+    });
+
+    it('un archivo que no es imagen da 400 y no cambia el logo', async () => {
+      const antes = await panel<{ logoUrl: string | null }>('GET', '/settings');
+
+      const { status, body } = await api.upload<{ message: string }>(
+        'PUT',
+        logoPath(),
+        shop,
+        notAnImage,
+      );
+
+      expect(status).toBe(400);
+      expect(body.message).toBe('El archivo no es una imagen.');
+
+      const despues = await panel<{ logoUrl: string | null }>('GET', '/settings');
+
+      expect(despues.body.logoUrl).toBe(antes.body.logoUrl);
+    });
+
+    it('quitar el logo deja la tienda con el nombre y borra el archivo', async () => {
+      const { body: conLogo } = await panel<{ logoUrl: string }>('GET', '/settings');
+      const quitado = await panel<{ logoUrl: string | null }>('DELETE', '/settings/logo');
+
+      expect(quitado.status).toBe(200);
+      expect(quitado.body.logoUrl).toBeNull();
+      expect(existsSync(logoFile(conLogo.logoUrl))).toBe(false);
+
+      const publico = await pub<{ settings: { logoUrl: string | null } }>('');
+
+      expect(publico.body.settings.logoUrl).toBeNull();
+    });
+  });
+
   describe('colecciones', () => {
     let collection: CollectionBody;
     let collectionHero = '';
