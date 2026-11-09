@@ -7,6 +7,7 @@ import { AllExceptionsFilter } from '@shared/filters/all-exceptions.filter';
 import { FrontSecretGuard } from '@shared/guards/front-secret.guard';
 import { AiModule } from '@shared/ai/ai.module';
 import { MailModule } from '@shared/mail/mail.module';
+import { DomainProviderModule } from '@shared/domains/domain-provider.module';
 import { PaymentsModule } from '@shared/payments/payments.module';
 import { StorageModule } from '@shared/storage/storage.module';
 import { AssistantModule } from '@modules/assistant/assistant.module';
@@ -14,6 +15,7 @@ import { AuthModule } from '@modules/auth/auth.module';
 import { CatalogModule } from '@modules/catalog/catalog.module';
 import { CommerceModule } from '@modules/commerce/commerce.module';
 import { ContentModule } from '@modules/content/content.module';
+import { DomainsModule } from '@modules/domains/domains.module';
 import { HealthModule } from '@modules/health/health.module';
 import { OrdersModule } from '@modules/orders/orders.module';
 import { StorePaymentsModule } from '@modules/payments/payments.module';
@@ -48,11 +50,13 @@ import { PrismaModule } from '@db/prisma.module';
     MailModule,
     AiModule,
     PaymentsModule,
+    DomainProviderModule,
     AuthModule,
     AssistantModule,
     CatalogModule,
     ContentModule,
     CommerceModule,
+    DomainsModule,
     StorefrontModule,
     OrdersModule,
     PlatformModule,

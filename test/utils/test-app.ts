@@ -108,6 +108,8 @@ export interface TestApp {
   forgetStore(storeId: string): void;
   /** Conexión con el rol dueño, para preparar estados que la API no deja crear. */
   withOwner<T>(work: (client: Client) => Promise<T>): Promise<T>;
+  /** Un servicio de la aplicación levantada, para probar tareas que no pasan por HTTP. */
+  get<T>(type: abstract new (...args: never[]) => T): T;
   close(): Promise<void>;
 }
 
@@ -243,6 +245,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
     withoutSecret,
     upload,
     withOwner,
+    get: <T>(type: abstract new (...args: never[]) => T): T => app.get<T>(type),
     mediaDir,
 
     forgetStore(storeId: string): void {

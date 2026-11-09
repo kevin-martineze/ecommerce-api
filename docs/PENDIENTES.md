@@ -82,9 +82,9 @@ apagado: `AI_DRIVER=none`.
 
 - [x] **Slugs reservados.** (2026-09-19) La lista vive en los dos repos y cada
       archivo nombra al otro.
-- [ ] **Dominios propios.** `stores.custom_domain` existe y el plan Pro lo
-      promete, pero nada lo resuelve. Hace falta `GET /public/by-domain/:host`
-      y un certificado por dominio.
+- [x] **Dominios propios.** (2026-11-06) Resolución por host, panel de la
+      dueña, verificación DNS, chequeo diario y proveedor Vercel. Ver
+      ARCHITECTURE § 10.
 - [ ] **El access token sobrevive a su sesión.** Cambiar la contraseña cierra
       los refresh tokens, pero un access token ya emitido vale hasta 15
       minutos más. Cerrarlo antes cuesta una consulta por petición.

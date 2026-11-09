@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StoreSettings } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { Env } from '@shared/config/env';
 import { Assistant } from '@shared/ai/assistant';
 import { isEmptyTheme, readTheme } from '@shared/content/theme';
 import {
@@ -7,17 +9,29 @@ import {
   UpdateStoreSettingsDto,
   UpdateStoreThemeDto,
 } from '@shared/dtos/content/settings.dto';
+import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
 import { assertCollectionInStore } from '@shared/tenancy/store-references';
+import { publicUrl } from '@shared/tenancy/public-url';
 import { blankToNull } from '@shared/utils/text';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
 const MISSING = 'La tienda no tiene ajustes.';
+
+/** Lo que se lee de la tienda para armar sus ajustes y su dirección pública. */
+const STORE_FIELDS = {
+  name: true,
+  slug: true,
+  status: true,
+  customDomain: true,
+  customDomainStatus: true,
+} satisfies Prisma.StoreSelect;
 
 @Injectable()
 export class StoreSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly assistant: Assistant,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   /**
@@ -38,14 +52,20 @@ export class StoreSettingsService {
 
   get(storeId: string): Promise<StoreSettingsDto> {
     return this.prisma.forStore(storeId, async (tx) => {
-      const store = await tx.store.findUnique({ where: { id: storeId }, select: { name: true } });
+      const store = await tx.store.findUnique({ where: { id: storeId }, select: STORE_FIELDS });
       const settings = await tx.storeSettings.findUnique({ where: { storeId } });
 
       if (!store || !settings) {
         throw new NotFoundException(MISSING);
       }
 
-      return toDto(store.name, settings, await this.hasAssistant(tx, storeId));
+      return toDto(
+        store,
+        settings,
+        await this.hasAssistant(tx, storeId),
+        await planAllowsCustomDomain(tx, storeId),
+        this.config.get('FRONTEND_URL', { infer: true }),
+      );
     });
   }
 
@@ -81,13 +101,19 @@ export class StoreSettingsService {
         },
       });
 
-      const store = await tx.store.findUnique({ where: { id: storeId }, select: { name: true } });
+      const store = await tx.store.findUnique({ where: { id: storeId }, select: STORE_FIELDS });
 
       if (!store) {
         throw new NotFoundException(MISSING);
       }
 
-      return toDto(store.name, settings, await this.hasAssistant(tx, storeId));
+      return toDto(
+        store,
+        settings,
+        await this.hasAssistant(tx, storeId),
+        await planAllowsCustomDomain(tx, storeId),
+        this.config.get('FRONTEND_URL', { infer: true }),
+      );
     });
   }
 }
@@ -109,9 +135,25 @@ function themeColumn(
   return { ...normalized };
 }
 
-function toDto(storeName: string, settings: StoreSettings, assistant: boolean): StoreSettingsDto {
+function toDto(
+  store: Prisma.StoreGetPayload<{ select: typeof STORE_FIELDS }>,
+  settings: StoreSettings,
+  assistant: boolean,
+  customDomainAllowed: boolean,
+  frontendUrl: string,
+): StoreSettingsDto {
   return {
-    storeName,
+    storeName: store.name,
+    publicUrl: publicUrl(
+      {
+        slug: store.slug,
+        status: store.status,
+        customDomain: store.customDomain,
+        customDomainStatus: store.customDomainStatus,
+        planAllowsCustomDomain: customDomainAllowed,
+      },
+      frontendUrl,
+    ),
     whatsappPhone: settings.whatsappPhone,
     instagramUrl: settings.instagramUrl,
     announcement: settings.announcement,
