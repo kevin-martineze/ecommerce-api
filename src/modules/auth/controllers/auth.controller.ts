@@ -26,6 +26,8 @@ import {
   ForgotPasswordDto,
   InvitationPreviewDto,
   ResetPasswordDto,
+  SetPasswordDto,
+  UnlinkGoogleDto,
 } from '@shared/dtos/auth/account.dto';
 import {
   GoogleAcceptInvitationDto,
@@ -168,6 +170,44 @@ export class AuthController {
   @ApiOperation({ summary: 'Cierra esta sesión. Las otras sesiones de la cuenta siguen vivas.' })
   async logout(@Body() dto: RefreshDto): Promise<void> {
     await this.auth.logout(dto.refreshToken);
+  }
+
+  /**
+   * Crea la contraseña de una cuenta que entra solo con Google. Si ya tiene
+   * una, responde 409 `password_already_set`: para cambiarla está `password/change`.
+   */
+  @Post('password/set')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Crea la contraseña de una cuenta que entra con Google. Esta sesión sigue; las demás se cierran. Error: password_already_set (409) si la cuenta ya tiene contraseña.',
+  })
+  async setPassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SetPasswordDto,
+  ): Promise<void> {
+    await this.account.setPassword(user.id, dto);
+  }
+
+  /**
+   * Desconecta Google. Sin contraseña responde 409 `password_required`; sin
+   * Google vinculado, 404 `google_not_linked`.
+   */
+  @Post('identities/google/unlink')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Desconecta Google de la cuenta. Esta sesión sigue; las demás se cierran. Errores: password_required (409) si la cuenta no tiene contraseña; google_not_linked (404) si no hay Google vinculado.',
+  })
+  async unlinkGoogle(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UnlinkGoogleDto,
+  ): Promise<void> {
+    await this.account.unlinkGoogle(user.id, dto);
   }
 
   @Post('password/forgot')
