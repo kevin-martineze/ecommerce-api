@@ -129,9 +129,15 @@ export class AccountService {
         throw new BadRequestException(INVALID_RESET);
       }
 
+      // El enlace llegó al correo: la cuenta acaba de probar que es suyo.
       await tx.user.update({
         where: { id: token.userId },
-        data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
+        data: {
+          passwordHash,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          emailVerifiedAt: new Date(),
+        },
       });
 
       return token.userId;
@@ -255,6 +261,9 @@ export class AccountService {
       if (!id) {
         throw new BadRequestException(INVALID_INVITATION);
       }
+
+      // La invitación llegó a este correo: abrirla prueba que es suyo.
+      await tx.user.update({ where: { id }, data: { emailVerifiedAt: new Date() } });
 
       await this.prisma.setStoreContext(tx, store.id);
 

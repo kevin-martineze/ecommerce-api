@@ -110,3 +110,31 @@ export function invitationMail(
     html: layout(title, lines, { label: 'Aceptar la invitación', url }),
   };
 }
+
+/**
+ * A la dueña: se conectó Google a su cuenta.
+ *
+ * Sale en cada vínculo, aunque lo haya hecho ella: si no fue, es la única
+ * forma de enterarse. Con `passwordRemoved`, además le cuenta que la
+ * contraseña se borró (la cuenta nunca había probado su correo) y cómo
+ * volver a tener una.
+ */
+export function googleLinkedMail(to: string, url: string, passwordRemoved: boolean): MailMessage {
+  const title = 'Se conectó Google a tu cuenta';
+  const lines = [
+    `Desde ahora puedes entrar a Globerce con tu cuenta de Google (${to}).`,
+    ...(passwordRemoved
+      ? [
+          'Por seguridad borramos la contraseña que tenía la cuenta y cerramos todas las sesiones abiertas. Si quieres seguir entrando con contraseña, crea una nueva con el enlace de abajo.',
+        ]
+      : ['Por seguridad cerramos las demás sesiones abiertas.']),
+    'Si no fuiste tú, crea una contraseña nueva con el enlace de abajo y escríbenos.',
+  ];
+
+  return {
+    to,
+    subject: title,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: layout(title, lines, { label: 'Crear una contraseña', url }),
+  };
+}

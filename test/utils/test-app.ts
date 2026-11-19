@@ -13,6 +13,7 @@ import { FRONT_SECRET_HEADER } from '@shared/guards/front-secret.guard';
 import { LogMailer } from '@shared/mail/log-mailer';
 import { Mailer } from '@shared/mail/mailer';
 import { MULTIPART_OPTIONS } from '@shared/media/upload';
+import { GOOGLE_FETCH, GoogleFetch } from '@modules/auth/providers/google-auth.service';
 
 import { AppModule } from '../../src/app.module';
 
@@ -123,6 +124,8 @@ export interface TestAppOptions {
    * bonito.
    */
   assistant?: Assistant;
+  /** Con qué habla la API con Google. En los e2e, siempre `FakeGoogle.fetch`. */
+  googleFetch?: GoogleFetch;
 }
 
 export async function startTestApp(options: TestAppOptions = {}): Promise<TestApp> {
@@ -138,6 +141,15 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
   if (options.assistant) {
     builder.overrideProvider(Assistant).useValue(options.assistant);
   }
+
+  // Sin un Google de mentira, cualquier llamada a Google falla en vez de salir
+  // a internet con las credenciales falsas de setup-env.
+  builder
+    .overrideProvider(GOOGLE_FETCH)
+    .useValue(
+      options.googleFetch ??
+        (() => Promise.reject(new Error('Esta suite no simula Google: usa FakeGoogle.'))),
+    );
 
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());

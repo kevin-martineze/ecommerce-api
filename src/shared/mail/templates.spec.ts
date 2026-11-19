@@ -1,4 +1,4 @@
-import { invitationMail, passwordResetMail } from './templates';
+import { googleLinkedMail, invitationMail, passwordResetMail } from './templates';
 
 describe('plantillas de correo', () => {
   it('escapa lo que escribió una persona antes de meterlo en el HTML', () => {
@@ -22,5 +22,15 @@ describe('plantillas de correo', () => {
     expect(mail.text).toContain(url);
     expect(mail.html).toContain(`href="${url}"`);
     expect(mail.text).toContain('60 minutos');
+  });
+
+  it('el aviso de Google vinculado dice si se borró la contraseña', () => {
+    const url = 'https://tienda.test/admin/forgot-password';
+    const withRemoval = googleLinkedMail('duena@tienda.test', url, true);
+    const withoutRemoval = googleLinkedMail('duena@tienda.test', url, false);
+
+    expect(withRemoval.text).toContain('borramos la contraseña');
+    expect(withoutRemoval.text).not.toContain('borramos la contraseña');
+    expect(withRemoval.html).toContain(`href="${url}"`);
   });
 });

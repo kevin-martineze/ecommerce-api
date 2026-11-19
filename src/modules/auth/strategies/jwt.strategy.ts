@@ -27,8 +27,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
    * que sí exige base —comprobar que la membresía siga viva— lo hace
    * `StoreRolesGuard`, y solo en las rutas que operan sobre una tienda.
    */
-  validate(payload: AccessTokenPayload): AuthenticatedUser {
-    if (!payload.sub || !payload.email) {
+  validate(payload: AccessTokenPayload & { aud?: unknown }): AuthenticatedUser {
+    // Los access tokens no llevan `aud`. Otro JWT firmado con el mismo secreto
+    // (el `signupToken` del registro con Google) sí, y no abre sesión.
+    if (!payload.sub || !payload.email || payload.aud !== undefined) {
       throw new UnauthorizedException('La sesión no es válida. Vuelve a entrar.');
     }
 

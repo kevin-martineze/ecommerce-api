@@ -124,6 +124,31 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url().default('http://localhost:5173').transform(stripTrailingSlash),
 
   /**
+   * Entrar y registrarse con Google (solo dueñas y equipo).
+   *
+   * Opcionales: sin el id y el secreto, `/auth/google` responde
+   * `google_not_configured` y el resto de la API sigue igual. El secreto vive
+   * solo acá: el frontend arma la URL de Google con el id y la API hace el
+   * canje del código.
+   */
+  GOOGLE_CLIENT_ID: z.string().min(10).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(10).optional(),
+  /**
+   * Las direcciones de regreso registradas en Google, separadas por coma. La
+   * que manda el frontend se compara contra esta lista: nunca se confía en lo
+   * que llegue en la petición.
+   */
+  GOOGLE_REDIRECT_URIS: z
+    .string()
+    .default('')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((uri) => uri.trim())
+        .filter(Boolean),
+    ),
+
+  /**
    * Con qué se cobra: la mensualidad de las tiendas y, con las llaves de cada
    * una, los pedidos de sus clientas.
    *
