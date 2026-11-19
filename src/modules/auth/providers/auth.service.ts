@@ -5,6 +5,15 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { z } from 'zod';
+import { Env } from '@shared/config/env';
+import {
+  GoogleRegisterDto,
+  GoogleSignInDto,
+  GoogleSignInResultDto,
+} from '@shared/dtos/auth/google.dto';
 import { LoginDto } from '@shared/dtos/auth/login.dto';
 import { CreateStoreDto, RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
 import {
@@ -12,8 +21,11 @@ import {
   SessionResponseDto,
   SessionStoreDto,
 } from '@shared/dtos/auth/session-response.dto';
+import { Mailer } from '@shared/mail/mailer';
+import { googleLinkedMail } from '@shared/mail/templates';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
+import { GoogleAuthService, GoogleProfile } from './google-auth.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 
@@ -30,14 +42,48 @@ const MAX_FAILED_ATTEMPTS = 8;
 const LOCK_MINUTES = 15;
 
 /** Días de prueba antes del primer cobro. */
-const TRIAL_DAYS = 14;
+const TRIAL_DAYS = 30;
 
 /** Con qué plan arranca quien no eligió ninguno. */
 const DEFAULT_PLAN = 'basico';
 
+/** Proveedor de las identidades de Google en `user_identities`. */
+const GOOGLE = 'google';
+
+/**
+ * El `signupToken` del registro con Google.
+ *
+ * Firmado con `JWT_SECRET`, igual que los access tokens, así que la audiencia
+ * es lo que los separa: uno sin `aud` no sirve de `signupToken`, y uno con
+ * `aud` no sirve de access token (ver `JwtStrategy`). Quince minutos alcanzan
+ * para llenar los datos de la tienda.
+ */
+const SIGNUP_AUDIENCE = 'google-signup';
+const SIGNUP_TTL = '15m';
+
+const signupClaimsSchema = z.object({
+  sub: z.string().min(1),
+  email: z.string().email(),
+  fullName: z.string().nullable(),
+});
+
+const INVALID_SIGNUP = {
+  message: 'El registro con Google venció o no es válido. Vuelve a empezar.',
+  error: 'signup_token_invalid',
+};
+
 export interface RequestContext {
   userAgent?: string | null;
   ip?: string | null;
+}
+
+/** La cuenta que se crea junto con la tienda: con contraseña o con Google. */
+interface NewOwner {
+  email: string;
+  fullName: string | null;
+  passwordHash: string | null;
+  emailVerifiedAt: Date | null;
+  identity: GoogleProfile | null;
 }
 
 @Injectable()
@@ -48,6 +94,10 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
+    private readonly google: GoogleAuthService,
+    private readonly jwt: JwtService,
+    private readonly mailer: Mailer,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   /** Da de alta una tienda y la cuenta de su dueña, en una sola transacción. */
@@ -62,9 +112,128 @@ export class AuthService {
 
     const passwordHash = await this.passwords.hash(dto.password);
 
+    return this.createOwnerWithStore(
+      { email, fullName: dto.fullName.trim(), passwordHash, emailVerifiedAt: null, identity: null },
+      dto,
+      context,
+    );
+  }
+
+  /**
+   * Entra con Google. Tres caminos, en este orden:
+   *
+   * 1. La cuenta de Google ya está vinculada: sesión.
+   * 2. Hay una cuenta con ese correo: se vincula (ver `linkGoogle`) y sesión.
+   * 3. No hay cuenta: `signupToken` para el segundo paso del registro.
+   *
+   * El bloqueo por intentos fallidos no aplica: frena la fuerza bruta de la
+   * contraseña, y acá la identidad la probó Google.
+   */
+  async signInWithGoogle(
+    dto: GoogleSignInDto,
+    context: RequestContext = {},
+  ): Promise<GoogleSignInResultDto> {
+    const profile = await this.google.profileFromCode(dto.code, dto.codeVerifier, dto.redirectUri);
+
+    const identity = await this.prisma.userIdentity.findUnique({
+      where: { provider_providerSubject: { provider: GOOGLE, providerSubject: profile.subject } },
+      select: { userId: true },
+    });
+
+    if (identity) {
+      return { status: 'session', session: await this.sessionInFirstStore(identity.userId, context) };
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: profile.email },
+      select: { id: true, email: true, emailVerifiedAt: true },
+    });
+
+    if (existing) {
+      await this.linkGoogle(existing, profile);
+
+      return { status: 'session', session: await this.sessionInFirstStore(existing.id, context) };
+    }
+
+    const signupToken = await this.jwt.signAsync(
+      { sub: profile.subject, email: profile.email, fullName: profile.fullName },
+      { audience: SIGNUP_AUDIENCE, expiresIn: SIGNUP_TTL },
+    );
+
+    return {
+      status: 'signup_required',
+      signupToken,
+      email: profile.email,
+      fullName: profile.fullName,
+    };
+  }
+
+  /**
+   * Segundo paso del registro con Google: la tienda. La cuenta nace sin
+   * contraseña, con el correo ya probado y la identidad de Google atada, todo
+   * en la misma transacción que la tienda.
+   */
+  async registerWithGoogle(
+    dto: GoogleRegisterDto,
+    context: RequestContext = {},
+  ): Promise<SessionResponseDto> {
+    const claims = await this.readSignupToken(dto.signupToken);
+
+    // Entre el primer paso y este, alguien pudo registrarse con ese correo o
+    // terminar este mismo registro en otra pestaña.
+    await this.assertEmailAvailable(claims.email);
+
+    const linked = await this.prisma.userIdentity.findUnique({
+      where: { provider_providerSubject: { provider: GOOGLE, providerSubject: claims.sub } },
+      select: { id: true },
+    });
+
+    if (linked) {
+      throw new ConflictException({
+        message: 'Esa cuenta de Google ya tiene una cuenta en Globerce. Entra con Google.',
+        error: 'email_taken',
+      });
+    }
+
+    await this.assertSlugAvailable(dto.storeSlug);
+
+    return this.createOwnerWithStore(
+      {
+        email: claims.email,
+        fullName: dto.fullName ?? claims.fullName,
+        passwordHash: null,
+        emailVerifiedAt: new Date(),
+        identity: { subject: claims.sub, email: claims.email, fullName: claims.fullName },
+      },
+      dto,
+      context,
+    );
+  }
+
+  private async createOwnerWithStore(
+    owner: NewOwner,
+    dto: Pick<RegisterStoreDto, 'storeName' | 'storeSlug' | 'whatsappPhone' | 'planCode'>,
+    context: RequestContext,
+  ): Promise<SessionResponseDto> {
     const { user, store } = await this.prisma.withTransaction(async (tx) => {
       const createdUser = await tx.user.create({
-        data: { email, fullName: dto.fullName.trim(), passwordHash },
+        data: {
+          email: owner.email,
+          fullName: owner.fullName,
+          passwordHash: owner.passwordHash,
+          emailVerifiedAt: owner.emailVerifiedAt,
+          ...(owner.identity
+            ? {
+                identities: {
+                  create: {
+                    provider: GOOGLE,
+                    providerSubject: owner.identity.subject,
+                    email: owner.identity.email,
+                  },
+                },
+              }
+            : {}),
+        },
       });
 
       const createdStore = await this.provisionStore(tx, createdUser.id, dto);
@@ -115,8 +284,18 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { memberships: { include: { store: true }, orderBy: { createdAt: 'asc' } } },
+      include: {
+        memberships: { include: { store: true }, orderBy: { createdAt: 'asc' } },
+        identities: { select: { provider: true } },
+      },
     });
+
+    // Una cuenta que solo entra con Google lo dice, para que el frontend
+    // muestre el botón en vez de "contraseña incorrecta". Revela que la cuenta
+    // existe, a cambio de no dejar a la dueña probando contraseñas que no tiene.
+    if (user && !user.passwordHash && user.identities.length > 0) {
+      throw new UnauthorizedException({ message: 'Esta cuenta entra con Google.', error: 'use_google' });
+    }
 
     if (!user || !user.passwordHash) {
       // Se gasta el mismo tiempo que costaría verificar de verdad. Sin esto, un
@@ -310,6 +489,88 @@ export class AuthService {
     // creando filas que quizá nadie use.
 
     return store;
+  }
+
+  /**
+   * Ata la cuenta de Google a una cuenta que ya existía con ese correo.
+   *
+   * Google confirmó el correo, pero la cuenta pudo abrirla otra persona con
+   * ese correo y una contraseña suya: hoy el registro no prueba el correo. Por
+   * eso, si la cuenta nunca lo probó, se borra la contraseña. Siempre se
+   * cierran las demás sesiones y se avisa por correo.
+   */
+  private async linkGoogle(
+    user: { id: string; email: string; emailVerifiedAt: Date | null },
+    profile: GoogleProfile,
+  ): Promise<void> {
+    const passwordRemoved = user.emailVerifiedAt === null;
+
+    await this.prisma.withTransaction(async (tx) => {
+      await tx.userIdentity.create({
+        data: {
+          userId: user.id,
+          provider: GOOGLE,
+          providerSubject: profile.subject,
+          email: profile.email,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerifiedAt: new Date(),
+          ...(passwordRemoved ? { passwordHash: null } : {}),
+        },
+      });
+    });
+
+    await this.tokens.revokeAllForUser(user.id);
+
+    this.logger.log(`Google vinculado a la cuenta ${user.id}`);
+
+    const url = `${this.config.get('FRONTEND_URL', { infer: true })}/admin/forgot-password`;
+
+    this.mailer.send(googleLinkedMail(user.email, url, passwordRemoved)).catch((error: unknown) => {
+      this.logger.error(
+        `No se pudo enviar el aviso de Google vinculado: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }
+
+  /** La tienda activa se elige igual que en `login`: la primera donde es miembro. */
+  private async sessionInFirstStore(
+    userId: string,
+    context: RequestContext,
+  ): Promise<SessionResponseDto> {
+    const user = await this.requireUserWithStores(userId);
+    const stores = toSessionStores(user.memberships);
+    const activeStoreId = stores[0]?.id ?? null;
+    const issued = await this.tokens.issue(user.id, user.email, activeStoreId, context);
+
+    return {
+      ...issued,
+      user: { id: user.id, email: user.email, fullName: user.fullName },
+      stores,
+      activeStoreId,
+    };
+  }
+
+  private async readSignupToken(token: string): Promise<z.infer<typeof signupClaimsSchema>> {
+    let payload: unknown;
+
+    try {
+      payload = await this.jwt.verifyAsync<object>(token, { audience: SIGNUP_AUDIENCE });
+    } catch {
+      throw new UnauthorizedException(INVALID_SIGNUP);
+    }
+
+    const claims = signupClaimsSchema.safeParse(payload);
+
+    if (!claims.success) {
+      throw new UnauthorizedException(INVALID_SIGNUP);
+    }
+
+    return claims.data;
   }
 
   private async requireUserWithStores(userId: string) {
