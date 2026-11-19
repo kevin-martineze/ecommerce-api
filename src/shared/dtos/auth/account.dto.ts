@@ -7,6 +7,9 @@ import { Trim } from '@shared/dtos/transforms';
 const PASSWORD_MIN = 12;
 const PASSWORD_MESSAGE = `La contraseña necesita al menos ${PASSWORD_MIN} caracteres.`;
 
+/** El enlace de invitación: `<storeId>.<secreto>`. Lo comparten las rutas que la aceptan. */
+export const INVITATION_TOKEN_PATTERN = /^[0-9a-f-]{36}\.[A-Za-z0-9_-]{20,}$/;
+
 export class ForgotPasswordDto {
   @ApiProperty({ example: 'dueña@mitienda.com' })
   @Trim()
@@ -75,7 +78,7 @@ export class InvitationPreviewDto {
 export class AcceptInvitationDto {
   @ApiProperty({ description: 'El enlace completo: `<storeId>.<secreto>`.' })
   @IsString()
-  @Matches(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]{20,}$/, { message: 'La invitación no es válida.' })
+  @Matches(INVITATION_TOKEN_PATTERN, { message: 'La invitación no es válida.' })
   @MaxLength(200)
   token!: string;
 
