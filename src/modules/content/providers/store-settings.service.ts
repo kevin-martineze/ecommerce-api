@@ -9,7 +9,7 @@ import {
   UpdateStoreSettingsDto,
   UpdateStoreThemeDto,
 } from '@shared/dtos/content/settings.dto';
-import { processLogo, newStoragePath } from '@shared/media/images';
+import { logoKey, processLogo, newStoragePath } from '@shared/media/images';
 import { Upload } from '@shared/media/upload';
 import { MediaStorage } from '@shared/storage/media-storage';
 import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
@@ -208,11 +208,6 @@ export class StoreSettingsService {
       );
     }
   }
-}
-
-/** El logo es un solo archivo WebP colgado de la ruta base que se guarda. */
-function logoKey(storagePath: string): string {
-  return `${storagePath}.webp`;
 }
 
 /**

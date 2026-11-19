@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/decorators/current-user.decorator';
+import { AccountDisabledException } from '@shared/errors/account-disabled';
 import { PrismaService } from '@db/prisma.service';
 
 /**
@@ -21,11 +22,15 @@ export class PlatformAdminGuard implements CanActivate {
 
     const admin = await this.prisma.platformAdmin.findUnique({
       where: { userId: request.user.id },
-      select: { userId: true },
+      select: { user: { select: { disabledAt: true } } },
     });
 
     if (!admin) {
       throw new ForbiddenException('Esta cuenta no administra la plataforma.');
+    }
+
+    if (admin.user.disabledAt) {
+      throw new AccountDisabledException();
     }
 
     return true;

@@ -86,10 +86,12 @@ export class AccountService {
     const normalized = email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email: normalized },
-      select: { id: true, email: true },
+      select: { id: true, email: true, disabledAt: true },
     });
 
-    if (!user) {
+    // Una cuenta deshabilitada recibe la misma respuesta que una inexistente:
+    // el enlace no le serviría para entrar y decirlo revelaría el estado.
+    if (!user || user.disabledAt) {
       return;
     }
 

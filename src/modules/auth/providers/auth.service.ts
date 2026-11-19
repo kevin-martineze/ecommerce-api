@@ -21,6 +21,7 @@ import {
   SessionResponseDto,
   SessionStoreDto,
 } from '@shared/dtos/auth/session-response.dto';
+import { AccountDisabledException } from '@shared/errors/account-disabled';
 import { Mailer } from '@shared/mail/mailer';
 import { googleLinkedMail } from '@shared/mail/templates';
 import { PrismaService, TenantClient } from '@db/prisma.service';
@@ -161,8 +162,14 @@ export class AuthService {
 
     const existing = await this.prisma.user.findUnique({
       where: { email: profile.email },
-      select: { id: true, email: true, emailVerifiedAt: true },
+      select: { id: true, email: true, emailVerifiedAt: true, disabledAt: true },
     });
+
+    // Antes de vincular: una cuenta deshabilitada no gana una identidad nueva
+    // ni pierde su contraseña por intentar entrar con Google.
+    if (existing?.disabledAt) {
+      throw new AccountDisabledException();
+    }
 
     if (existing) {
       const link = await this.prisma.withTransaction((tx) =>
@@ -632,6 +639,10 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('La sesión no es válida. Vuelve a entrar.');
+    }
+
+    if (user.disabledAt) {
+      throw new AccountDisabledException();
     }
 
     return user;
