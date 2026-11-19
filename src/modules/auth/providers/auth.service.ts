@@ -48,7 +48,7 @@ const TRIAL_DAYS = 30;
 const DEFAULT_PLAN = 'basico';
 
 /** Proveedor de las identidades de Google en `user_identities`. */
-const GOOGLE = 'google';
+export const GOOGLE = 'google';
 
 /**
  * El `signupToken` del registro con Google.
@@ -84,6 +84,18 @@ interface NewOwner {
   passwordHash: string | null;
   emailVerifiedAt: Date | null;
   identity: GoogleProfile | null;
+}
+
+/**
+ * Lo que `afterGoogleLink` necesita de un vínculo ya escrito.
+ *
+ * `passwordRemoved` va al correo de aviso: distinto si la cuenta perdió su
+ * contraseña o no.
+ */
+export interface GoogleLink {
+  userId: string;
+  email: string;
+  passwordRemoved: boolean;
 }
 
 @Injectable()
@@ -153,7 +165,11 @@ export class AuthService {
     });
 
     if (existing) {
-      await this.linkGoogle(existing, profile);
+      const link = await this.prisma.withTransaction((tx) =>
+        this.writeGoogleLink(tx, existing, profile),
+      );
+
+      await this.afterGoogleLink(link);
 
       return { status: 'session', session: await this.sessionInFirstStore(existing.id, context) };
     }
@@ -498,49 +514,62 @@ export class AuthService {
   }
 
   /**
-   * Ata la cuenta de Google a una cuenta que ya existía con ese correo.
+   * Escribe el vínculo de Google a una cuenta que ya existía con ese correo,
+   * dentro de la transacción de quien llama.
    *
    * Google confirmó el correo, pero la cuenta pudo abrirla otra persona con
    * ese correo y una contraseña suya: hoy el registro no prueba el correo. Por
-   * eso, si la cuenta nunca lo probó, se borra la contraseña. Siempre se
-   * cierran las demás sesiones y se avisa por correo.
+   * eso, si la cuenta nunca lo probó, se borra la contraseña. Quien llama
+   * confirma su transacción y después llama a `afterGoogleLink`.
    */
-  private async linkGoogle(
+  async writeGoogleLink(
+    tx: TenantClient,
     user: { id: string; email: string; emailVerifiedAt: Date | null },
     profile: GoogleProfile,
-  ): Promise<void> {
+  ): Promise<GoogleLink> {
     const passwordRemoved = user.emailVerifiedAt === null;
 
-    await this.prisma.withTransaction(async (tx) => {
-      await tx.userIdentity.create({
-        data: {
-          userId: user.id,
-          provider: GOOGLE,
-          providerSubject: profile.subject,
-          email: profile.email,
-        },
-      });
-
-      await tx.user.update({
-        where: { id: user.id },
-        data: {
-          emailVerifiedAt: new Date(),
-          ...(passwordRemoved ? { passwordHash: null } : {}),
-        },
-      });
+    await tx.userIdentity.create({
+      data: {
+        userId: user.id,
+        provider: GOOGLE,
+        providerSubject: profile.subject,
+        email: profile.email,
+      },
     });
 
-    await this.tokens.revokeAllForUser(user.id);
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerifiedAt: new Date(),
+        ...(passwordRemoved ? { passwordHash: null } : {}),
+      },
+    });
 
-    this.logger.log(`Google vinculado a la cuenta ${user.id}`);
+    return { userId: user.id, email: user.email, passwordRemoved };
+  }
+
+  /**
+   * Lo que sigue a un vínculo ya confirmado: cierra todas las sesiones de la
+   * cuenta y avisa por correo. Va después de la transacción a propósito: si
+   * esta falla, no hay sesiones cerradas ni correo que explicar. Siempre se
+   * cierran las demás sesiones, también al vincular una cuenta que sí probó su
+   * correo.
+   */
+  async afterGoogleLink(link: GoogleLink): Promise<void> {
+    await this.tokens.revokeAllForUser(link.userId);
+
+    this.logger.log(`Google vinculado a la cuenta ${link.userId}`);
 
     const url = `${this.config.get('FRONTEND_URL', { infer: true })}/admin/forgot-password`;
 
-    this.mailer.send(googleLinkedMail(user.email, url, passwordRemoved)).catch((error: unknown) => {
-      this.logger.error(
-        `No se pudo enviar el aviso de Google vinculado: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
+    this.mailer
+      .send(googleLinkedMail(link.email, url, link.passwordRemoved))
+      .catch((error: unknown) => {
+        this.logger.error(
+          `No se pudo enviar el aviso de Google vinculado: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   /** La tienda activa se elige igual que en `login`: la primera donde es miembro. */
