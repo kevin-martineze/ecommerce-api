@@ -82,6 +82,11 @@ export function imageObjectKey(storagePath: string, size: ImageSize): string {
   return `${storagePath}-${size}.webp`;
 }
 
+/** El logo es un solo archivo WebP colgado de la ruta base que se guarda. */
+export function logoKey(storagePath: string): string {
+  return `${storagePath}.webp`;
+}
+
 /** Las tres claves de una foto, para borrarlas juntas. */
 export function imageObjectKeys(storagePath: string): string[] {
   return IMAGE_SIZES.map((size) => imageObjectKey(storagePath, size.key));

@@ -4,6 +4,7 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Env } from '@shared/config/env';
+import { AccountDisabledException } from '@shared/errors/account-disabled';
 import { PrismaService } from '@db/prisma.service';
 
 /** Lo que viaja dentro del access token. */
@@ -74,6 +75,22 @@ export class TokenService {
     storeId: string | null,
     context: SessionContext = {},
   ): Promise<IssuedSession> {
+    // Toda sesión nace aquí —entrar, Google, invitación, cambiar de tienda,
+    // renovar—, así que este es el único lugar que hace falta para que una
+    // cuenta deshabilitada no abra ni renueve ninguna.
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { disabledAt: true },
+    });
+
+    if (!account) {
+      throw new UnauthorizedException('La sesión no es válida. Vuelve a entrar.');
+    }
+
+    if (account.disabledAt) {
+      throw new AccountDisabledException();
+    }
+
     const payload: AccessTokenPayload = { sub: userId, email, storeId };
 
     const accessToken = await this.jwt.signAsync(payload);

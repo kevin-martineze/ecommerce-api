@@ -4,6 +4,7 @@ import { MemberRole } from '@prisma/client';
 import { AuthenticatedUser } from '@shared/decorators/current-user.decorator';
 import { ALLOWED_WITHOUT_SUBSCRIPTION } from '@shared/decorators/billing-route.decorator';
 import { ROLES_KEY } from '@shared/decorators/roles.decorator';
+import { AccountDisabledException } from '@shared/errors/account-disabled';
 import { PrismaService } from '@db/prisma.service';
 
 /**
@@ -58,11 +59,21 @@ export class StoreRolesGuard implements CanActivate {
 
     const membership = await this.prisma.storeMember.findUnique({
       where: { storeId_userId: { storeId, userId: request.user.id } },
-      select: { role: true, store: { select: { status: true } } },
+      select: {
+        role: true,
+        store: { select: { status: true } },
+        user: { select: { disabledAt: true } },
+      },
     });
 
     if (!membership) {
       throw new ForbiddenException('No tienes acceso a esta tienda.');
+    }
+
+    // El access token sigue firmado hasta que vence; la cuenta deshabilitada
+    // se corta aquí, en la misma consulta que ya se hace por petición.
+    if (membership.user.disabledAt) {
+      throw new AccountDisabledException();
     }
 
     const isWrite = request.method !== 'GET';

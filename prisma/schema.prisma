@@ -281,6 +281,11 @@ model User {
   /// abrirla otra persona con este correo (ver docs del plan de Google).
   emailVerifiedAt DateTime? @map("email_verified_at")
 
+  /// Cuándo la deshabilitó la plataforma. Null = activa. Una cuenta
+  /// deshabilitada no abre sesión ni renueva la que tiene, y los guards que ya
+  /// consultan la base la cortan en la siguiente petición.
+  disabledAt DateTime? @map("disabled_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
