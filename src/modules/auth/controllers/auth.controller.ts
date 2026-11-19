@@ -28,6 +28,7 @@ import {
   ResetPasswordDto,
 } from '@shared/dtos/auth/account.dto';
 import {
+  GoogleAcceptInvitationDto,
   GoogleRegisterDto,
   GoogleSessionResultDto,
   GoogleSignInDto,
@@ -217,6 +218,25 @@ export class AuthController {
     @Req() req: FastifyRequest,
   ): Promise<SessionResponseDto> {
     return this.account.acceptInvitation(dto, contextOf(req));
+  }
+
+  /**
+   * Mismo límite que `invitations/accept`: cada intento canjea un código con
+   * Google, y ninguna persona necesita más de diez por minuto.
+   */
+  @Post('invitations/accept-google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Acepta la invitación entrando con Google. Devuelve sesión en esa tienda. Errores: invitation_email_mismatch (403) si el correo de Google no es el invitado; google_account_linked_elsewhere (409) si esa cuenta de Google pertenece a otro correo.',
+  })
+  @ApiOkResponse({ type: SessionResponseDto })
+  acceptInvitationWithGoogle(
+    @Body() dto: GoogleAcceptInvitationDto,
+    @Req() req: FastifyRequest,
+  ): Promise<SessionResponseDto> {
+    return this.account.acceptInvitationWithGoogle(dto, contextOf(req));
   }
 }
 

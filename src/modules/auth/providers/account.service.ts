@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -13,13 +15,15 @@ import {
   InvitationPreviewDto,
   ResetPasswordDto,
 } from '@shared/dtos/auth/account.dto';
+import { GoogleAcceptInvitationDto } from '@shared/dtos/auth/google.dto';
 import { SessionResponseDto } from '@shared/dtos/auth/session-response.dto';
 import { Mailer } from '@shared/mail/mailer';
 import { passwordResetMail } from '@shared/mail/templates';
 import { hashSecret, newSecret } from '@shared/utils/secrets';
-import { PrismaService } from '@db/prisma.service';
+import { PrismaService, TenantClient } from '@db/prisma.service';
 
-import { AuthService, RequestContext } from './auth.service';
+import { AuthService, GOOGLE, GoogleLink, RequestContext } from './auth.service';
+import { GoogleAuthService, GoogleProfile } from './google-auth.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 
@@ -46,6 +50,7 @@ export class AccountService {
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly auth: AuthService,
+    private readonly google: GoogleAuthService,
     private readonly mailer: Mailer,
     private readonly config: ConfigService<Env, true>,
   ) {}
@@ -293,6 +298,146 @@ export class AccountService {
     });
 
     return this.auth.sessionFor(userId, store.id, context);
+  }
+
+  /**
+   * Acepta la invitación entrando con Google: sin contraseña.
+   *
+   * La invitación prueba que el enlace llegó a un correo; Google prueba que la
+   * persona que canjea el código controla ese correo. Por eso los dos tienen
+   * que coincidir: si no, nada se escribe y el enlace sigue sin usar.
+   *
+   * Todo lo que escribe va en una transacción: vínculo, membresía e invitación
+   * marcada. El aviso y el cierre de sesiones van después, cuando el vínculo ya
+   * es real.
+   */
+  async acceptInvitationWithGoogle(
+    dto: GoogleAcceptInvitationDto,
+    context: RequestContext = {},
+  ): Promise<SessionResponseDto> {
+    const found = await this.findPendingInvitation(dto.token);
+
+    if (!found) {
+      throw new BadRequestException(INVALID_INVITATION);
+    }
+
+    const { invitation, store } = found;
+    const invitedEmail = invitation.email.trim().toLowerCase();
+
+    // Canjea el código y exige `email_verified`: si Google no confirma el
+    // correo, responde aquí y no llega a comparar nada.
+    const profile = await this.google.profileFromCode(dto.code, dto.codeVerifier, dto.redirectUri);
+
+    if (profile.email !== invitedEmail) {
+      throw new ForbiddenException({
+        message: `Esta invitación es para otro correo. Entra a Google con ${invitedEmail}.`,
+        error: 'invitation_email_mismatch',
+      });
+    }
+
+    const { userId, link } = await this.prisma.withTransaction(async (tx) => {
+      const account = await this.googleAccountForInvitation(tx, profile, invitedEmail);
+
+      // Abrir la invitación con Google prueba el correo, igual que aceptarla con
+      // contraseña.
+      await tx.user.update({
+        where: { id: account.userId },
+        data: { emailVerifiedAt: new Date() },
+      });
+
+      await this.prisma.setStoreContext(tx, store.id);
+
+      const claimed = await tx.storeInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          storeId: store.id,
+          acceptedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { acceptedAt: new Date() },
+      });
+
+      // Otra pestaña la aceptó un instante antes: se deshace también el vínculo.
+      if (claimed.count === 0) {
+        throw new BadRequestException(INVALID_INVITATION);
+      }
+
+      // Ya miembro (la invitaron dos veces): se respeta el rol que tenía.
+      await tx.storeMember.upsert({
+        where: { storeId_userId: { storeId: store.id, userId: account.userId } },
+        create: { storeId: store.id, userId: account.userId, role: invitation.role },
+        update: {},
+      });
+
+      return account;
+    });
+
+    if (link) {
+      await this.auth.afterGoogleLink(link);
+    }
+
+    return this.auth.sessionFor(userId, store.id, context);
+  }
+
+  /**
+   * La cuenta que entra con Google a la invitación, dentro de la transacción.
+   *
+   * 1. Ya hay una identidad de Google: se usa su cuenta, pero solo si su correo
+   *    es el invitado. Si no, el `sub` pertenece a otra cuenta y no se toca.
+   * 2. Hay una cuenta con ese correo: se vincula con las reglas del §6 y se
+   *    devuelve el `link` para avisar después.
+   * 3. No hay nada: se crea sin contraseña, con el correo y el nombre de Google.
+   */
+  private async googleAccountForInvitation(
+    tx: TenantClient,
+    profile: GoogleProfile,
+    invitedEmail: string,
+  ): Promise<{ userId: string; link: GoogleLink | null }> {
+    const identity = await tx.userIdentity.findUnique({
+      where: { provider_providerSubject: { provider: GOOGLE, providerSubject: profile.subject } },
+      select: { user: { select: { id: true, email: true } } },
+    });
+
+    if (identity) {
+      if (identity.user.email !== invitedEmail) {
+        throw new ConflictException({
+          message: 'Esa cuenta de Google ya está vinculada a otra cuenta de Globerce.',
+          error: 'google_account_linked_elsewhere',
+        });
+      }
+
+      return { userId: identity.user.id, link: null };
+    }
+
+    const existing = await tx.user.findUnique({
+      where: { email: invitedEmail },
+      select: { id: true, email: true, emailVerifiedAt: true },
+    });
+
+    if (existing) {
+      const link = await this.auth.writeGoogleLink(tx, existing, profile);
+
+      return { userId: existing.id, link };
+    }
+
+    const created = await tx.user.create({
+      data: {
+        email: invitedEmail,
+        fullName: profile.fullName,
+        passwordHash: null,
+        emailVerifiedAt: new Date(),
+        identities: {
+          create: {
+            provider: GOOGLE,
+            providerSubject: profile.subject,
+            email: profile.email,
+          },
+        },
+      },
+    });
+
+    return { userId: created.id, link: null };
   }
 
   private async findPendingInvitation(token: string) {

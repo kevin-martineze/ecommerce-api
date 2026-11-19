@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
 import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { Trim } from '@shared/dtos/transforms';
 
+import { INVITATION_TOKEN_PATTERN } from './account.dto';
 import { RegisterStoreDto } from './register-store.dto';
 import { SessionResponseDto } from './session-response.dto';
 
@@ -85,4 +86,23 @@ export class GoogleRegisterDto extends PickType(RegisterStoreDto, [
   @MinLength(2)
   @MaxLength(120)
   fullName?: string;
+}
+
+/**
+ * Aceptar una invitación entrando con Google.
+ *
+ * El canje es el mismo de `GoogleSignInDto` (PKCE, `redirectUri` permitida); lo
+ * único nuevo es el enlace de la invitación. El nombre y el correo los pone
+ * Google: el correo tiene que ser el invitado.
+ */
+export class GoogleAcceptInvitationDto extends PickType(GoogleSignInDto, [
+  'code',
+  'codeVerifier',
+  'redirectUri',
+] as const) {
+  @ApiProperty({ description: 'El enlace completo de la invitación: `<storeId>.<secreto>`.' })
+  @IsString()
+  @Matches(INVITATION_TOKEN_PATTERN, { message: 'La invitación no es válida.' })
+  @MaxLength(200)
+  token!: string;
 }
