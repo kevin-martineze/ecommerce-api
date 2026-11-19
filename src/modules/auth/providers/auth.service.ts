@@ -141,7 +141,10 @@ export class AuthService {
     });
 
     if (identity) {
-      return { status: 'session', session: await this.sessionInFirstStore(identity.userId, context) };
+      return {
+        status: 'session',
+        session: await this.sessionInFirstStore(identity.userId, context),
+      };
     }
 
     const existing = await this.prisma.user.findUnique({
@@ -294,7 +297,10 @@ export class AuthService {
     // muestre el botón en vez de "contraseña incorrecta". Revela que la cuenta
     // existe, a cambio de no dejar a la dueña probando contraseñas que no tiene.
     if (user && !user.passwordHash && user.identities.length > 0) {
-      throw new UnauthorizedException({ message: 'Esta cuenta entra con Google.', error: 'use_google' });
+      throw new UnauthorizedException({
+        message: 'Esta cuenta entra con Google.',
+        error: 'use_google',
+      });
     }
 
     if (!user || !user.passwordHash) {

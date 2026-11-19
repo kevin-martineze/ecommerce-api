@@ -275,9 +275,16 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
 
+  /// Última vez que la cuenta probó controlar su correo: restablecer la
+  /// contraseña, aceptar una invitación o entrar con Google. Null = nunca.
+  /// Al vincular Google a una cuenta en null se borra su contraseña: pudo
+  /// abrirla otra persona con este correo (ver docs del plan de Google).
+  emailVerifiedAt DateTime? @map("email_verified_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  identities             UserIdentity[]
   memberships            StoreMember[]
   platformAdmin          PlatformAdmin?
   refreshTokens          RefreshToken[]
@@ -288,6 +295,29 @@ model User {
   supportMessagesWritten SupportMessage[]     @relation("SupportMessageAuthoredBy")
 
   @@map("users")
+}
+
+/// Una cuenta de un proveedor externo (hoy solo Google) atada a una cuenta.
+///
+/// Tabla aparte y no una columna en `users`: la puerta queda abierta a Apple u
+/// otro proveedor sin otra migración. La identidad es `(provider, sub)`, nunca
+/// el correo: el correo de una cuenta de Google puede cambiar, el `sub` no.
+model UserIdentity {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  /// "google"
+  provider        String
+  /// El `sub` que da el proveedor.
+  providerSubject String   @map("provider_subject")
+  /// Correo que dio el proveedor al vincular. Solo informativo.
+  email           String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+  @@map("user_identities")
 }
 
 /// Enlace de un solo uso para fijar una contraseña nueva sin conocer la actual.

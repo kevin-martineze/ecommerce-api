@@ -8,6 +8,7 @@ import { StoreRolesGuard } from '@shared/guards/store-roles.guard';
 import { AuthController } from './controllers/auth.controller';
 import { AccountService } from './providers/account.service';
 import { AuthService } from './providers/auth.service';
+import { GoogleAuthService, googleFetchProvider } from './providers/google-auth.service';
 import { PasswordService } from './providers/password.service';
 import { TokenService } from './providers/token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -27,6 +28,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   providers: [
     AuthService,
     AccountService,
+    GoogleAuthService,
+    googleFetchProvider,
     PasswordService,
     TokenService,
     JwtStrategy,

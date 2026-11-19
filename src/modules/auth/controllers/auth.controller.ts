@@ -9,7 +9,14 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiCreatedResponse,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FastifyRequest } from 'fastify';
 import { AuthenticatedUser, CurrentUser } from '@shared/decorators/current-user.decorator';
@@ -20,6 +27,13 @@ import {
   InvitationPreviewDto,
   ResetPasswordDto,
 } from '@shared/dtos/auth/account.dto';
+import {
+  GoogleRegisterDto,
+  GoogleSessionResultDto,
+  GoogleSignInDto,
+  GoogleSignInResultDto,
+  GoogleSignupRequiredDto,
+} from '@shared/dtos/auth/google.dto';
 import { LoginDto } from '@shared/dtos/auth/login.dto';
 import { RefreshDto, SwitchStoreDto } from '@shared/dtos/auth/refresh.dto';
 import { CreateStoreDto, RegisterStoreDto } from '@shared/dtos/auth/register-store.dto';
@@ -30,6 +44,7 @@ import { AccountService } from '../providers/account.service';
 import { AuthService } from '../providers/auth.service';
 
 @ApiTags('auth')
+@ApiExtraModels(GoogleSessionResultDto, GoogleSignupRequiredDto)
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -72,6 +87,48 @@ export class AuthController {
   @ApiOperation({ summary: 'Inicia sesión con correo y contraseña.' })
   login(@Body() dto: LoginDto, @Req() req: FastifyRequest): Promise<SessionResponseDto> {
     return this.auth.login(dto, contextOf(req));
+  }
+
+  /**
+   * Canjea el `code` que Google dejó en el callback del frontend.
+   *
+   * Mismo límite que `login`: aunque acá no se adivina una contraseña, cada
+   * intento es un canje contra Google y ninguna persona necesita más.
+   */
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Entra con Google. Devuelve la sesión, o un signupToken si la cuenta todavía no existe.',
+  })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(GoogleSessionResultDto) },
+        { $ref: getSchemaPath(GoogleSignupRequiredDto) },
+      ],
+      discriminator: { propertyName: 'status' },
+    },
+  })
+  signInWithGoogle(
+    @Body() dto: GoogleSignInDto,
+    @Req() req: FastifyRequest,
+  ): Promise<GoogleSignInResultDto> {
+    return this.auth.signInWithGoogle(dto, contextOf(req));
+  }
+
+  @Post('google/register')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Segundo paso del registro con Google: crea la tienda y la cuenta sin contraseña.',
+  })
+  @ApiCreatedResponse({ type: SessionResponseDto })
+  registerWithGoogle(
+    @Body() dto: GoogleRegisterDto,
+    @Req() req: FastifyRequest,
+  ): Promise<SessionResponseDto> {
+    return this.auth.registerWithGoogle(dto, contextOf(req));
   }
 
   @Post('refresh')
