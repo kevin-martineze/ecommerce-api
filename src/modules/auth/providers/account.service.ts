@@ -14,11 +14,13 @@ import {
   ChangePasswordDto,
   InvitationPreviewDto,
   ResetPasswordDto,
+  SetPasswordDto,
+  UnlinkGoogleDto,
 } from '@shared/dtos/auth/account.dto';
 import { GoogleAcceptInvitationDto } from '@shared/dtos/auth/google.dto';
 import { SessionResponseDto } from '@shared/dtos/auth/session-response.dto';
-import { Mailer } from '@shared/mail/mailer';
-import { passwordResetMail } from '@shared/mail/templates';
+import { Mailer, MailMessage } from '@shared/mail/mailer';
+import { googleUnlinkedMail, passwordCreatedMail, passwordResetMail } from '@shared/mail/templates';
 import { hashSecret, newSecret } from '@shared/utils/secrets';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
@@ -32,6 +34,24 @@ const RESET_TTL_MINUTES = 60;
 
 const INVALID_RESET = 'El enlace no es válido o ya venció. Pide uno nuevo.';
 const INVALID_INVITATION = 'La invitación no es válida, ya se usó o venció.';
+const INVALID_SESSION = 'La sesión no es válida. Vuelve a entrar.';
+
+/** Una cuenta que ya tiene contraseña no la vuelve a fijar: para cambiarla, `changePassword`. */
+const PASSWORD_ALREADY_SET = {
+  message: 'Tu cuenta ya tiene contraseña. Para cambiarla, usa cambiar contraseña.',
+  error: 'password_already_set',
+};
+
+/** Desconectar Google sin contraseña dejaría la cuenta sin forma de entrar. */
+const PASSWORD_REQUIRED = {
+  message: 'Crea una contraseña antes de desconectar Google: si no, no podrías entrar.',
+  error: 'password_required',
+};
+
+const GOOGLE_NOT_LINKED = {
+  message: 'Esta cuenta no tiene Google conectado.',
+  error: 'google_not_linked',
+};
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -175,6 +195,90 @@ export class AccountService {
     });
 
     await this.tokens.revokeAllForUser(userId, dto.refreshToken);
+  }
+
+  /**
+   * Crea la contraseña de una cuenta que entra solo con Google. No pide la
+   * actual porque no existe: quien tiene sesión ya probó la cuenta con Google.
+   *
+   * El `UPDATE` lleva `passwordHash: null` en el `where`: si otra pestaña acaba
+   * de fijar una, esta no la pisa y responde igual que si la hubiera visto antes.
+   */
+  async setPassword(userId: string, dto: SetPasswordDto): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, passwordHash: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException(INVALID_SESSION);
+    }
+
+    if (user.passwordHash !== null) {
+      throw new ConflictException(PASSWORD_ALREADY_SET);
+    }
+
+    const passwordHash = await this.passwords.hash(dto.newPassword);
+    const claimed = await this.prisma.user.updateMany({
+      where: { id: userId, passwordHash: null },
+      data: { passwordHash },
+    });
+
+    if (claimed.count === 0) {
+      throw new ConflictException(PASSWORD_ALREADY_SET);
+    }
+
+    await this.tokens.revokeAllForUser(userId, dto.refreshToken);
+
+    this.notify(
+      passwordCreatedMail(user.email, this.accountUrl()),
+      'el aviso de contraseña creada',
+    );
+  }
+
+  /**
+   * Desconecta Google de la cuenta. Sin contraseña, la cuenta se quedaría sin
+   * forma de entrar, así que se exige crear una antes.
+   *
+   * La comprobación y el borrado van en UNA transacción, con la fila de la
+   * cuenta bloqueada (`for update`). Así `setPassword` o un vínculo nuevo que
+   * llegan a la vez esperan a que esta decisión termine, y nadie decide con un
+   * estado que otra petición está cambiando.
+   *
+   * Las demás sesiones se cierran después, cuando el borrado ya es real. La de
+   * `refreshToken` sigue viva: es la que hizo el cambio.
+   */
+  async unlinkGoogle(userId: string, dto: UnlinkGoogleDto): Promise<void> {
+    const email = await this.prisma.withTransaction(async (tx) => {
+      await tx.$queryRaw`select id from users where id = ${userId}::uuid for update`;
+
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { email: true, passwordHash: true },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException(INVALID_SESSION);
+      }
+
+      const linked = await tx.userIdentity.count({ where: { userId, provider: GOOGLE } });
+
+      if (linked === 0) {
+        throw new NotFoundException(GOOGLE_NOT_LINKED);
+      }
+
+      if (user.passwordHash === null) {
+        throw new ConflictException(PASSWORD_REQUIRED);
+      }
+
+      await tx.userIdentity.deleteMany({ where: { userId, provider: GOOGLE } });
+
+      return user.email;
+    });
+
+    await this.tokens.revokeAllForUser(userId, dto.refreshToken);
+
+    this.notify(googleUnlinkedMail(email, this.accountUrl()), 'el aviso de Google desconectado');
   }
 
   /** Lo que muestra el enlace de invitación antes de aceptarla. */
@@ -438,6 +542,20 @@ export class AccountService {
     });
 
     return { userId: created.id, link: null };
+  }
+
+  /** Manda un aviso sin esperarlo: si el SMTP tarda o falla, la respuesta no cambia. */
+  private notify(message: MailMessage, what: string): void {
+    this.mailer.send(message).catch((error: unknown) => {
+      this.logger.error(
+        `No se pudo enviar ${what}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }
+
+  /** La página que sirve para recuperar la cuenta si no fue quien hizo el cambio. */
+  private accountUrl(): string {
+    return `${this.config.get('FRONTEND_URL', { infer: true })}/admin/forgot-password`;
   }
 
   private async findPendingInvitation(token: string) {

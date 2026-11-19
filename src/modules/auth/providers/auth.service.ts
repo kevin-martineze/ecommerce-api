@@ -419,13 +419,26 @@ export class AuthService {
     };
   }
 
+  /**
+   * Datos de la cuenta y cómo entra. `passwordHash` nunca sale de aquí: solo se
+   * lee si hay contraseña, y la respuesta lleva un booleano.
+   */
   async me(userId: string): Promise<MeResponseDto> {
     const user = await this.requireUserWithStores(userId);
+    const google = await this.prisma.userIdentity.findFirst({
+      where: { userId, provider: GOOGLE },
+      orderBy: { createdAt: 'asc' },
+      select: { email: true, createdAt: true },
+    });
 
     return {
       user: { id: user.id, email: user.email, fullName: user.fullName },
       stores: toSessionStores(user.memberships),
       isPlatformAdmin: user.platformAdmin !== null,
+      signIn: {
+        hasPassword: user.passwordHash !== null,
+        google: google ? { email: google.email, linkedAt: google.createdAt.toISOString() } : null,
+      },
     };
   }
 

@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
 import { MemberRole } from '@prisma/client';
 import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { Trim } from '@shared/dtos/transforms';
@@ -51,6 +51,12 @@ export class ChangePasswordDto {
   @MaxLength(200)
   refreshToken!: string;
 }
+
+/** Crear la primera contraseña de una cuenta que entra solo con Google. Mismas reglas que `ChangePasswordDto`. */
+export class SetPasswordDto extends PickType(ChangePasswordDto, ['newPassword', 'refreshToken']) {}
+
+/** Desconectar Google. Pide el refresh token de la sesión que lo hace, para dejarla viva. */
+export class UnlinkGoogleDto extends PickType(ChangePasswordDto, ['refreshToken']) {}
 
 /** Una invitación vista desde el enlace, antes de aceptarla. */
 export class InvitationPreviewDto {

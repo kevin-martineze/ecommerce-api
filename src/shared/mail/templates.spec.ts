@@ -1,4 +1,10 @@
-import { googleLinkedMail, invitationMail, passwordResetMail } from './templates';
+import {
+  googleLinkedMail,
+  googleUnlinkedMail,
+  invitationMail,
+  passwordCreatedMail,
+  passwordResetMail,
+} from './templates';
 
 describe('plantillas de correo', () => {
   it('escapa lo que escribió una persona antes de meterlo en el HTML', () => {
@@ -32,5 +38,20 @@ describe('plantillas de correo', () => {
     expect(withRemoval.text).toContain('borramos la contraseña');
     expect(withoutRemoval.text).not.toContain('borramos la contraseña');
     expect(withRemoval.html).toContain(`href="${url}"`);
+  });
+
+  it('los avisos de contraseña creada y de Google desconectado llevan asunto propio y el enlace', () => {
+    const url = 'https://tienda.test/admin/forgot-password';
+    const created = passwordCreatedMail('duena@tienda.test', url);
+    const unlinked = googleUnlinkedMail('duena@tienda.test', url);
+
+    expect(created.subject).toBe('Se creó una contraseña para tu cuenta');
+    expect(unlinked.subject).toBe('Se desconectó Google de tu cuenta');
+
+    for (const mail of [created, unlinked]) {
+      expect(mail.to).toBe('duena@tienda.test');
+      expect(mail.text).toContain(url);
+      expect(mail.html).toContain(`href="${url}"`);
+    }
   });
 });

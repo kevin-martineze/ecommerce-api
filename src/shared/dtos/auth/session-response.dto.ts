@@ -60,6 +60,34 @@ export class SessionResponseDto {
   activeStoreId!: string | null;
 }
 
+/** La identidad de Google vinculada a la cuenta. Nunca lleva el `sub`: es un dato interno. */
+export class GoogleIdentityDto {
+  @ApiProperty({ example: 'maria@gmail.com', description: 'Correo que dio Google al vincular.' })
+  email!: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'Cuándo se vinculó, en ISO 8601.',
+    example: '2026-11-19T12:00:00.000Z',
+  })
+  linkedAt!: string;
+}
+
+/** Cómo puede entrar la cuenta. Sirve al panel para decidir qué mostrar en "Cómo entras". */
+export class SignInMethodsDto {
+  @ApiProperty({
+    description: 'Si la cuenta tiene contraseña. Las cuentas solo-Google no la tienen.',
+  })
+  hasPassword!: boolean;
+
+  @ApiProperty({
+    type: GoogleIdentityDto,
+    nullable: true,
+    description: 'La cuenta de Google vinculada, o null si no hay ninguna.',
+  })
+  google!: GoogleIdentityDto | null;
+}
+
 export class MeResponseDto {
   @ApiProperty({ type: SessionUserDto })
   user!: SessionUserDto;
@@ -69,4 +97,7 @@ export class MeResponseDto {
 
   @ApiProperty({ description: 'Si la cuenta puede entrar a /platform.' })
   isPlatformAdmin!: boolean;
+
+  @ApiProperty({ type: SignInMethodsDto })
+  signIn!: SignInMethodsDto;
 }

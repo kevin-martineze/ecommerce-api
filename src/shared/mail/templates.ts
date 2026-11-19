@@ -138,3 +138,47 @@ export function googleLinkedMail(to: string, url: string, passwordRemoved: boole
     html: layout(title, lines, { label: 'Crear una contraseña', url }),
   };
 }
+
+/**
+ * A la dueña: se creó una contraseña para una cuenta que entraba solo con Google.
+ *
+ * El enlace lleva a recuperar contraseña: si no fue ella, así cambia la
+ * contraseña que acaba de crear alguien más.
+ */
+export function passwordCreatedMail(to: string, url: string): MailMessage {
+  const title = 'Se creó una contraseña para tu cuenta';
+  const lines = [
+    `Se creó una contraseña para tu cuenta de Globerce (${to}). Desde ahora puedes entrar con tu correo y esa contraseña, además de con Google.`,
+    'Por seguridad cerramos las demás sesiones abiertas.',
+    'Si no fuiste tú, cambia la contraseña con el enlace de abajo y escríbenos.',
+  ];
+
+  return {
+    to,
+    subject: title,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: layout(title, lines, { label: 'Cambiar la contraseña', url }),
+  };
+}
+
+/**
+ * A la dueña: se desconectó Google de su cuenta.
+ *
+ * Sale siempre, aunque lo haya hecho ella: si no fue, es la única forma de
+ * enterarse. El enlace lleva a recuperar contraseña por el mismo motivo.
+ */
+export function googleUnlinkedMail(to: string, url: string): MailMessage {
+  const title = 'Se desconectó Google de tu cuenta';
+  const lines = [
+    `Desconectaste Google de tu cuenta de Globerce (${to}). Desde ahora entras con tu correo y tu contraseña.`,
+    'Por seguridad cerramos las demás sesiones abiertas.',
+    'Si no fuiste tú, cambia la contraseña con el enlace de abajo y escríbenos.',
+  ];
+
+  return {
+    to,
+    subject: title,
+    text: `${lines.join('\n\n')}\n\n${url}`,
+    html: layout(title, lines, { label: 'Cambiar la contraseña', url }),
+  };
+}
