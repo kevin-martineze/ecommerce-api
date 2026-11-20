@@ -23,6 +23,7 @@ import { Mailer, MailMessage } from '@shared/mail/mailer';
 import { googleUnlinkedMail, passwordCreatedMail, passwordResetMail } from '@shared/mail/templates';
 import { hashSecret, newSecret } from '@shared/utils/secrets';
 import { PrismaService, TenantClient } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 
 import { AuthService, GOOGLE, GoogleLink, RequestContext } from './auth.service';
 import { GoogleAuthService, GoogleProfile } from './google-auth.service';
@@ -73,6 +74,7 @@ export class AccountService {
     private readonly google: GoogleAuthService,
     private readonly mailer: Mailer,
     private readonly config: ConfigService<Env, true>,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -358,6 +360,10 @@ export class AccountService {
 
     // Cuenta nueva, invitación usada y membresía: todo o nada. Una invitación
     // que otra pestaña aceptó un instante antes no deja una cuenta suelta.
+    // Solo una cuenta que no existía es noticia para la plataforma; completar
+    // una que ya estaba (sin contraseña) no.
+    const createsAccount = newAccount !== null && !existing;
+
     const userId = await this.prisma.withTransaction(async (tx) => {
       let id = existingUserId;
 
@@ -403,6 +409,10 @@ export class AccountService {
       return id;
     });
 
+    if (createsAccount) {
+      await this.notifyNewAccount(userId, store);
+    }
+
     return this.auth.sessionFor(userId, store.id, context);
   }
 
@@ -441,7 +451,7 @@ export class AccountService {
       });
     }
 
-    const { userId, link } = await this.prisma.withTransaction(async (tx) => {
+    const { userId, link, created } = await this.prisma.withTransaction(async (tx) => {
       const account = await this.googleAccountForInvitation(tx, profile, invitedEmail);
 
       // Abrir la invitación con Google prueba el correo, igual que aceptarla con
@@ -483,6 +493,10 @@ export class AccountService {
       await this.auth.afterGoogleLink(link);
     }
 
+    if (created) {
+      await this.notifyNewAccount(userId, store);
+    }
+
     return this.auth.sessionFor(userId, store.id, context);
   }
 
@@ -499,7 +513,7 @@ export class AccountService {
     tx: TenantClient,
     profile: GoogleProfile,
     invitedEmail: string,
-  ): Promise<{ userId: string; link: GoogleLink | null }> {
+  ): Promise<{ userId: string; link: GoogleLink | null; created: boolean }> {
     const identity = await tx.userIdentity.findUnique({
       where: { provider_providerSubject: { provider: GOOGLE, providerSubject: profile.subject } },
       select: { user: { select: { id: true, email: true } } },
@@ -513,7 +527,7 @@ export class AccountService {
         });
       }
 
-      return { userId: identity.user.id, link: null };
+      return { userId: identity.user.id, link: null, created: false };
     }
 
     const existing = await tx.user.findUnique({
@@ -524,7 +538,7 @@ export class AccountService {
     if (existing) {
       const link = await this.auth.writeGoogleLink(tx, existing, profile);
 
-      return { userId: existing.id, link };
+      return { userId: existing.id, link, created: false };
     }
 
     const created = await tx.user.create({
@@ -543,7 +557,21 @@ export class AccountService {
       },
     });
 
-    return { userId: created.id, link: null };
+    return { userId: created.id, link: null, created: true };
+  }
+
+  /**
+   * A la plataforma: nació una cuenta por invitación. Después de la
+   * transacción, y `notifyPlatform` nunca lanza.
+   */
+  private async notifyNewAccount(
+    userId: string,
+    store: { id: string; name: string },
+  ): Promise<void> {
+    await this.notifications.notifyPlatform({
+      type: 'USER_REGISTERED',
+      data: { userId, storeId: store.id, storeName: store.name },
+    });
   }
 
   /** Manda un aviso sin esperarlo: si el SMTP tarda o falla, la respuesta no cambia. */

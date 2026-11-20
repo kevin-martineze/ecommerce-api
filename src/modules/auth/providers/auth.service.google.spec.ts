@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { Mailer } from '@shared/mail/mailer';
 import { PrismaService } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 
 import { AuthService } from './auth.service';
 import { GoogleAuthService, GoogleProfile } from './google-auth.service';
@@ -79,6 +80,10 @@ async function setup(state: { identityUserId?: string; existing?: Existing } = {
       { provide: JwtService, useValue: jwt },
       { provide: Mailer, useValue: mailer },
       { provide: ConfigService, useValue: new ConfigService({ FRONTEND_URL: 'https://g.test' }) },
+      {
+        provide: NotificationsService,
+        useValue: { notifyStore: jest.fn(), notifyPlatform: jest.fn() },
+      },
     ],
   }).compile();
 

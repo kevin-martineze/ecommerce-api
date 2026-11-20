@@ -218,6 +218,23 @@ const envSchema = z.object({
   PAYMENTS_SECRET: z.string().min(32).optional(),
 
   /**
+   * Avisos push con el panel cerrado (VAPID, RFC 8292).
+   *
+   * Opcionales, las tres juntas: sin ellas no se manda push y el resto de los
+   * avisos sigue igual. Se generan una vez con `npx web-push
+   * generate-vapid-keys`. Cambiar el par deja sin efecto todas las
+   * suscripciones guardadas: cada navegador tendrá que volver a activarlas.
+   * `VAPID_SUBJECT` es un `mailto:` o una URL de contacto: los servicios push
+   * escriben ahí si algo anda mal con los envíos.
+   */
+  VAPID_PUBLIC_KEY: z.string().min(40).optional(),
+  VAPID_PRIVATE_KEY: z.string().min(20).optional(),
+  VAPID_SUBJECT: z
+    .string()
+    .regex(/^(mailto:|https:\/\/)/, 'Un mailto: o una URL https.')
+    .optional(),
+
+  /**
    * Secreto que el frontend manda en `x-globerce-key`. Con él puesto, la API
    * solo atiende a quien lo conozca (ver FrontSecretGuard). Vacío en
    * desarrollo y en los tests; obligatorio en cuanto la API tenga IP pública.
@@ -269,6 +286,16 @@ const envSchemaWithRules = envSchema.superRefine((env, ctx) => {
         });
       }
     }
+  }
+
+  const vapid = [env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY, env.VAPID_SUBJECT];
+
+  if (vapid.some(Boolean) && !vapid.every(Boolean)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['VAPID_PUBLIC_KEY'],
+      message: 'VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY y VAPID_SUBJECT van las tres o ninguna.',
+    });
   }
 
   if (env.AI_DRIVER === 'anthropic' && !env.ANTHROPIC_API_KEY) {

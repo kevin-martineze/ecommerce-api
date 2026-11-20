@@ -14,6 +14,7 @@ import { FastifyInstance } from 'fastify';
 import { Env } from '@shared/config/env';
 import { buildValidationPipe } from '@shared/config/validation-pipe';
 import { MULTIPART_OPTIONS } from '@shared/media/upload';
+import { redactUrl } from '@shared/utils/redact-url';
 
 import { AppModule } from './app.module';
 
@@ -27,9 +28,10 @@ async function bootstrap(): Promise<void> {
    */
   const adapter = new FastifyAdapter({
     logger: isProduction
-      ? { level: 'info' }
+      ? { level: 'info', serializers: { req: requestForLog } }
       : {
           level: 'debug',
+          serializers: { req: requestForLog },
           transport: {
             target: 'pino-pretty',
             options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
@@ -156,3 +158,24 @@ bootstrap().catch((error: unknown) => {
   logger.error('La API no pudo arrancar', error instanceof Error ? error.stack : String(error));
   process.exit(1);
 });
+
+/**
+ * Lo que Fastify escribe de cada petición: lo mismo que su serializador por
+ * defecto, pero con la URL saneada. El ticket del stream de avisos viaja en la
+ * URL y no puede quedar en los logs (ver `redactUrl`).
+ */
+function requestForLog(request: {
+  method: string;
+  url: string;
+  hostname?: string;
+  ip?: string;
+  socket?: { remotePort?: number };
+}): Record<string, unknown> {
+  return {
+    method: request.method,
+    url: redactUrl(request.url),
+    hostname: request.hostname,
+    remoteAddress: request.ip,
+    remotePort: request.socket?.remotePort,
+  };
+}

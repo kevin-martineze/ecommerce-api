@@ -24,6 +24,7 @@ import {
 import { AccountDisabledException } from '@shared/errors/account-disabled';
 import { Mailer } from '@shared/mail/mailer';
 import { googleLinkedMail } from '@shared/mail/templates';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
 import { GoogleAuthService, GoogleProfile } from './google-auth.service';
@@ -111,6 +112,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly mailer: Mailer,
     private readonly config: ConfigService<Env, true>,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Da de alta una tienda y la cuenta de su dueña, en una sola transacción. */
@@ -269,6 +271,18 @@ export class AuthService {
 
     this.logger.log(`Tienda registrada: ${store.slug}`);
 
+    // Cuenta y tienda nacen juntas: un solo aviso, no dos.
+    await this.notifications.notifyPlatform({
+      type: 'STORE_CREATED',
+      data: {
+        storeId: store.id,
+        storeName: store.name,
+        slug: store.slug,
+        userId: user.id,
+        newAccount: true,
+      },
+    });
+
     const issued = await this.tokens.issue(user.id, user.email, store.id, context);
 
     return {
@@ -293,6 +307,17 @@ export class AuthService {
     const store = await this.prisma.withTransaction((tx) => this.provisionStore(tx, userId, dto));
 
     this.logger.log(`Tienda registrada: ${store.slug}`);
+
+    await this.notifications.notifyPlatform({
+      type: 'STORE_CREATED',
+      data: {
+        storeId: store.id,
+        storeName: store.name,
+        slug: store.slug,
+        userId,
+        newAccount: false,
+      },
+    });
 
     const issued = await this.tokens.rotate(dto.refreshToken, store.id, context, userId);
     const user = await this.requireUserWithStores(userId);

@@ -13,6 +13,7 @@ import { FRONT_SECRET_HEADER } from '@shared/guards/front-secret.guard';
 import { LogMailer } from '@shared/mail/log-mailer';
 import { Mailer } from '@shared/mail/mailer';
 import { MULTIPART_OPTIONS } from '@shared/media/upload';
+import { PushSender } from '@shared/notifications/push-sender';
 import { GOOGLE_FETCH, GoogleFetch } from '@modules/auth/providers/google-auth.service';
 
 import { AppModule } from '../../src/app.module';
@@ -111,6 +112,12 @@ export interface TestApp {
   withOwner<T>(work: (client: Client) => Promise<T>): Promise<T>;
   /** Un servicio de la aplicación levantada, para probar tareas que no pasan por HTTP. */
   get<T>(type: abstract new (...args: never[]) => T): T;
+  /**
+   * Abre un puerto de verdad y devuelve la base (`http://127.0.0.1:<puerto>/v1`).
+   * Para lo que `inject` no puede probar: respuestas que no terminan, como el
+   * stream de avisos.
+   */
+  listen(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -126,6 +133,11 @@ export interface TestAppOptions {
   assistant?: Assistant;
   /** Con qué habla la API con Google. En los e2e, siempre `FakeGoogle.fetch`. */
   googleFetch?: GoogleFetch;
+  /**
+   * Con qué se mandan los avisos push. Sin esto, el de las llaves del entorno
+   * (ninguna en los tests: no sale push). Los e2e de push ponen uno que anota.
+   */
+  pushSender?: PushSender;
 }
 
 export async function startTestApp(options: TestAppOptions = {}): Promise<TestApp> {
@@ -140,6 +152,10 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
 
   if (options.assistant) {
     builder.overrideProvider(Assistant).useValue(options.assistant);
+  }
+
+  if (options.pushSender) {
+    builder.overrideProvider(PushSender).useValue(options.pushSender);
   }
 
   // Sin un Google de mentira, cualquier llamada a Google falla en vez de salir
@@ -260,6 +276,12 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
     get: <T>(type: abstract new (...args: never[]) => T): T => app.get<T>(type),
     mediaDir,
 
+    async listen(): Promise<string> {
+      await app.listen(0, '127.0.0.1');
+
+      return `${await app.getUrl()}/v1`;
+    },
+
     forgetStore(storeId: string): void {
       storeIds.push(storeId);
     },
@@ -345,6 +367,15 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
 
       // La cascada desde `stores` arrastra todo el catálogo; la de `users`, las sesiones.
       await withOwner(async (client) => {
+        // Los avisos de plataforma de esta corrida no cuelgan de ninguna
+        // tienda: sin esto, cada tienda de prueba le dejaría un "tienda nueva"
+        // a quien administre la plataforma en la base de desarrollo.
+        await client.query(
+          `delete from platform_notifications
+           where data->>'storeId' = any($1::text[])
+              or data->>'userId' in (select id::text from users where email = any($2::text[]))`,
+          [storeIds, emails],
+        );
         await client.query('delete from stores where id = any($1::uuid[])', [storeIds]);
         await client.query('delete from users where email = any($1::text[])', [emails]);
       });

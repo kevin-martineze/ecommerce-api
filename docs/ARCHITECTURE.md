@@ -44,11 +44,12 @@ compilador exige.
 
 ## 3. Las tres superficies
 
-| Prefijo                   | Quién entra       | Qué la protege                        |
-| ------------------------- | ----------------- | ------------------------------------- |
-| `/v1/public/:storeSlug/*` | visitante anónimo | sin auth, `@Throttle` propio por ruta |
-| `/v1/stores/:storeId/*`   | dueña y personal  | `JwtAuthGuard` + `StoreRolesGuard`    |
-| `/v1/platform/*`          | administración    | `JwtAuthGuard` + `PlatformAdminGuard` |
+| Prefijo                    | Quién entra       | Qué la protege                        |
+| -------------------------- | ----------------- | ------------------------------------- |
+| `/v1/public/:storeSlug/*`  | visitante anónimo | sin auth, `@Throttle` propio por ruta |
+| `/v1/stores/:storeId/*`    | dueña y personal  | `JwtAuthGuard` + `StoreRolesGuard`    |
+| `/v1/platform/*`           | administración    | `JwtAuthGuard` + `PlatformAdminGuard` |
+| `/v1/notifications/stream` | el navegador      | ticket de 60 s (ver § 15)             |
 
 Separarlas por prefijo, y no por lógica dentro de un mismo controlador, es
 deliberado: cuando la superficie pública y la privada comparten ruta, tarde o
@@ -748,3 +749,129 @@ Degradar o quitar a una dueña bloquea las filas de todas las dueñas de la
 tienda antes de contarlas. Dos dueñas que se degradan la una a la otra a la
 vez se serializan, y la segunda ve el resultado de la primera. Quitar a alguien
 además cierra sus sesiones atadas a esa tienda.
+
+---
+
+## 15. Avisos del panel y de la consola
+
+Cada evento que le importa a una dueña (pedido nuevo, pedido pagado) o a la
+plataforma (tienda creada, cobros del plan, soporte) deja un aviso en una
+bandeja y se reparte en vivo a quien tenga el panel abierto. El plan completo
+vive en `shopping-sas/docs/plan-notificaciones-tiempo-real.md`.
+
+### Dos tablas, una fila por destinataria
+
+- `store_notifications`: bajo RLS, una fila por miembro de la tienda. Dueña y
+  personal reciben lo mismo; una cuenta deshabilitada no recibe nada.
+- `platform_notifications`: sin `store_id`, una fila por administradora de la
+  plataforma. Meter estos avisos en la tabla de tienda con `store_id` nulo los
+  dejaría invisibles para la política, o exigiría abrir una de "plataforma ve
+  todo": el agujero que RLS existe para no tener.
+
+Una fila por persona, y no una por evento con una tabla de lecturas, porque lo
+leído es de cada quien y el contador sale del índice de la bandeja sin unirse a
+nada.
+
+### Qué puede decir un aviso
+
+`data` se valida con zod al escribir y al leer
+(`shared/notifications/notification-events.ts`), con `.strict()`: solo ids,
+números, montos y nombres de la tienda. **Nunca datos de una clienta.** Un aviso
+se muestra en un toast, queda en la bandeja de cada miembro y, más adelante, se
+reenvía por push; el detalle se ve al abrir el enlace, dentro de la sesión.
+
+### Nunca tumba a quien avisa
+
+`NotificationsService.notifyStore` / `notifyPlatform` se llaman **después** de
+confirmar la transacción del disparador y nunca lanzan. Dentro de la
+transacción, un fallo del aviso revertiría el pedido; y un aviso publicado
+dentro de una transacción que después se revierte anunciaría un pedido que no
+existe. Si falla, se registra el id de la tienda y el tipo, nada más.
+
+### El reparto en vivo
+
+`NotificationBus` es abstracto y hoy lo implementa `InMemoryNotificationBus`,
+un `EventEmitter` por canal (`store:<tienda>:<persona>` o
+`platform:<persona>`). Alcanza porque la API corre en **una sola instancia**.
+Con dos, una conexión abierta en la A no se enteraría de un pedido creado en la
+B: ahí se cambia por una implementación sobre `LISTEN/NOTIFY` de Postgres, sin
+tocar a quien publica ni a quien escucha.
+
+El bus no guarda nada. La bandeja en la base es la fuente: una conexión que se
+perdió un aviso lo recupera al reconectar, leyendo la base.
+
+### Quién avisa y cuándo
+
+| Aviso                   | Dónde                                                             | Solo si                                                          |
+| ----------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `ORDER_PLACED`          | `CheckoutService.createOrder`                                     | el pedido es nuevo, no una repetición con `Idempotency-Key`      |
+| `ORDER_PAID`            | `OrderPaymentsService.applyPayment`                               | el pedido pasa a `PAID` ahora; la fila se bloquea antes          |
+| `STORE_CREATED`         | `AuthService.registerStore`, `registerWithGoogle` y `createStore` | siempre; una cuenta nueva con tienda es UN aviso, no dos         |
+| `USER_REGISTERED`       | `AccountService.acceptInvitation` y `acceptInvitationWithGoogle`  | la invitación crea una cuenta que no existía                     |
+| `SUBSCRIPTION_PAID`     | `SubscriptionsService.applyPayment`                               | el pago se aplica; el repetido sale antes                        |
+| `SUBSCRIPTION_FAILED`   | `SubscriptionsService.chargeDue`                                  | el cobro automático se rechaza o la pasarela falla; no `pending` |
+| `SUPPORT_TICKET_OPENED` | `StoreSupportService.create`                                      | siempre                                                          |
+| `SUPPORT_OWNER_REPLIED` | `StoreSupportService.reply`                                       | siempre                                                          |
+
+El cobro automático corre en el cron (`src/tasks/charge-due.ts`), que es
+**otro proceso**: su bus en memoria no es el de la API, así que el aviso de un
+cobro fallido queda en la bandeja pero no sale en vivo. Aparece al recargar o
+al reconectar. Con `LISTEN/NOTIFY` saldría en vivo también.
+
+### El stream: la única ruta que llama el navegador
+
+`GET /v1/notifications/stream?ticket=…&after=…` es SSE. Todo lo demás lo llama
+el servidor de SvelteKit; esto no, porque el front corre en Vercel y una
+conexión larga por pestaña ocuparía una función todo el rato.
+
+- **Ticket.** `POST /stores/:storeId/notifications/stream-ticket` o
+  `POST /platform/notifications/stream-ticket`, con la sesión normal. Es un JWT
+  con el mismo secreto, `aud: notifications-stream` y 60 s de vida. La
+  estrategia de sesión rechaza todo token con `aud`, así que el ticket no abre
+  el panel; el stream exige ese `aud`, así que un access token no abre el
+  stream. Va en la URL porque `EventSource` no manda cabeceras: por eso dura
+  tan poco y por eso `redactUrl` lo borra de los logs de Fastify y del filtro
+  de errores.
+- **Al conectar** se vuelve a mirar la base (membresía o `PlatformAdmin`, y
+  cuenta activa): el ticket prueba quién era hace un minuto, no quién es.
+- **`@OpenRoute`**: el navegador no tiene el secreto del frontend; la puerta es
+  el ticket. `Access-Control-Allow-Origin: *` sin credenciales, porque el panel
+  vive en subdominios y dominios propios que no están en `CORS_ORIGINS`.
+- **La respuesta se escribe a mano** (`reply.hijack()`): los hooks de Fastify
+  la comprimirían. En Caddy, la ruta va aparte, sin `encode` y con
+  `flush_interval -1`.
+- **`after`**: al reconectar, primero se reenvían desde la base hasta 50 avisos
+  posteriores a ese id, en orden, como `event: missed`; después lo nuevo, como
+  `event: notification`, sin repetir. El panel anuncia con toast solo lo
+  segundo.
+- Latido cada 25 s, `retry: 5000` y cierre a los 30 minutos: el navegador
+  reconecta con un ticket nuevo, y una membresía revocada no queda escuchando
+  con un ticket viejo. Al apagar la API se cierran todas, para no colgar el
+  apagado.
+
+`PUBLIC_API_URL` es la base que se le da al navegador; ya tenía que ser
+alcanzable desde internet por los eventos de la pasarela.
+
+### Push, con el panel cerrado
+
+Cada aviso también sale por Web Push (VAPID, `web-push`) a los navegadores
+que lo pidieron. Sin `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT`
+(las tres o ninguna) el `PushSender` es `DisabledPushSender` y no sale nada.
+
+- **`push_subscriptions`**: una fila por navegador y por bandeja (`store_id`,
+  o nulo para la consola). Es de la cuenta, sin RLS, como `refresh_tokens`;
+  por eso está exenta en `tenant-scope.arch-spec.ts`. El mismo navegador
+  puede pedir la tienda y la consola.
+- **Rutas**: `GET push-key`, `PUT` y `DELETE push-subscriptions`, bajo
+  `/stores/:storeId/notifications` y `/platform/notifications`.
+- **Solo servicios push conocidos** (`isKnownPushEndpoint`: FCM, Mozilla,
+  Apple, WNS, por https y sin puerto). El endpoint lo manda el navegador y la
+  API le hace un POST: sin la lista, sería una puerta para que la API llame a
+  direcciones internas.
+- **Si el navegador cambia de cuenta**, al suscribirse se borran las filas de
+  ese endpoint que eran de otra cuenta.
+- **Viaja el mismo aviso de la bandeja** (el DTO), cifrado de punta a punta
+  (RFC 8291); el texto lo arma el service worker del frontend. TTL 24 h.
+- **No se espera el envío**: `notify*` reparte y sigue. Un 404/410 borra la
+  suscripción; cualquier otro error se ignora.
+- El cron de cobros manda push igual que la API (no depende del bus).

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { isForeignKeyViolation, isRecordNotFound, isUniqueViolation } from '@db/prisma.service';
+import { redactUrl } from '@shared/utils/redact-url';
 
 /** Forma única de todo error que sale de la API. El frontend narrowa contra esto. */
 interface ErrorBody {
@@ -43,14 +44,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const reply = ctx.getResponse<FastifyReply>();
     const request = ctx.getRequest<FastifyRequest>();
 
-    const body = this.toErrorBody(exception, request.url);
+    // Sin secretos de la URL: el cuerpo y el log no repiten un ticket.
+    const url = redactUrl(request.url);
+    const body = this.toErrorBody(exception, url);
 
     // El 5xx se loguea entero —con stack— porque es un fallo nuestro. El 4xx no
     // ensucia el log: es el cliente mandando algo inválido, y a volumen de
     // tienda pública eso es ruido constante.
     if (body.statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `${request.method} ${request.url} -> ${body.statusCode}`,
+        `${request.method} ${url} -> ${body.statusCode}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
