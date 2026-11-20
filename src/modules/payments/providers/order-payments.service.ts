@@ -11,6 +11,7 @@ import { NotificationsService } from '@modules/notifications/providers/notificat
 import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
 
+import { orderReference, parseOrderReference } from './order-reference';
 import { StorePaymentsService } from './store-payments.service';
 
 /** Lo que el aviso de pago necesita del pedido. */
@@ -19,9 +20,6 @@ interface PaidOrder {
   number: number;
   total: number;
 }
-
-/** Lo que antecede a la referencia del cobro de un pedido. */
-const ORDER_PREFIX = 'ord';
 
 /**
  * Cobrarle a la clienta su pedido, con la cuenta de la tienda.
@@ -88,7 +86,7 @@ export class OrderPaymentsService {
 
     const session = gateway.checkout(
       {
-        reference: `${ORDER_PREFIX}-${order.id}`,
+        reference: orderReference(store.id, order.id),
         amountCop: order.total,
         description: `${store.name} · pedido #${number}`,
         redirectUrl,
@@ -124,9 +122,18 @@ export class OrderPaymentsService {
    * que cambia es el estado del cobro, que es otra cosa.
    */
   async applyPayment(storeId: string, event: PaymentEvent): Promise<void> {
-    const orderId = parseReference(event.reference);
+    const parsed = parseOrderReference(event.reference);
 
-    if (!orderId) return;
+    if (!parsed) return;
+
+    // Un cobro de otra tienda no se aplica acá aunque el pedido coincidiera.
+    if (parsed.storeId && parsed.storeId !== storeId) {
+      this.logger.warn(`Pago ${event.transactionId} con la referencia de otra tienda.`);
+
+      return;
+    }
+
+    const { orderId } = parsed;
 
     const paid = await this.prisma.forStore(storeId, async (tx): Promise<PaidOrder | null> => {
       // Dos entregas simultáneas del mismo evento se serializan acá: la
@@ -231,13 +238,4 @@ export class OrderPaymentsService {
 
     return safe;
   }
-}
-
-/** `ord-<uuid>`: el uuid trae guiones, así que se corta por el primero y ya. */
-function parseReference(reference: string): string | null {
-  if (!reference.startsWith(`${ORDER_PREFIX}-`)) return null;
-
-  const id = reference.slice(ORDER_PREFIX.length + 1);
-
-  return id.length === 36 ? id : null;
 }
