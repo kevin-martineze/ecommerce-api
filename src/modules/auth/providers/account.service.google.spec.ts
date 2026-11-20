@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { Mailer } from '@shared/mail/mailer';
 import { PrismaService } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 
 import { AccountService } from './account.service';
 import { AuthService } from './auth.service';
@@ -116,6 +117,11 @@ async function setup(state: State = {}) {
 
   const mailer = { send: jest.fn().mockResolvedValue(undefined) };
 
+  const notifications = {
+    notifyStore: jest.fn().mockResolvedValue(undefined),
+    notifyPlatform: jest.fn().mockResolvedValue(undefined),
+  };
+
   const google = {
     profileFromCode: jest.fn(() =>
       state.googleError !== undefined
@@ -135,6 +141,7 @@ async function setup(state: State = {}) {
       { provide: JwtService, useValue: new JwtService({ secret: SECRET }) },
       { provide: Mailer, useValue: mailer },
       { provide: ConfigService, useValue: new ConfigService({ FRONTEND_URL: 'https://g.test' }) },
+      { provide: NotificationsService, useValue: notifications },
     ],
   }).compile();
 
@@ -144,6 +151,7 @@ async function setup(state: State = {}) {
     tokens,
     mailer,
     google,
+    notifications,
   };
 }
 
@@ -194,6 +202,28 @@ describe('AccountService: aceptar la invitación con Google', () => {
     expect(mailer.send).not.toHaveBeenCalled();
     expect(result).toMatchObject({ user: { id: 'user-nueva' }, activeStoreId: STORE_ID });
     expect(tokens.issue).toHaveBeenCalledWith('user-nueva', INVITED, STORE_ID, {});
+  });
+
+  it('una cuenta nueva avisa a la plataforma una vez, con la tienda a la que entró', async () => {
+    const { account, notifications } = await setup();
+
+    await account.acceptInvitationWithGoogle(body);
+
+    expect(notifications.notifyPlatform).toHaveBeenCalledTimes(1);
+    expect(notifications.notifyPlatform).toHaveBeenCalledWith({
+      type: 'USER_REGISTERED',
+      data: { userId: 'user-nueva', storeId: STORE_ID, storeName: store.name },
+    });
+  });
+
+  it('una cuenta que ya existía no avisa a la plataforma', async () => {
+    const { account, notifications } = await setup({
+      existing: { id: 'user-1', email: INVITED, emailVerifiedAt: new Date('2026-01-01') },
+    });
+
+    await account.acceptInvitationWithGoogle(body);
+
+    expect(notifications.notifyPlatform).not.toHaveBeenCalled();
   });
 
   it('con cuenta que nunca probó su correo, la vincula, borra su contraseña, cierra sus sesiones y avisa', async () => {
@@ -345,7 +375,7 @@ describe('AccountService: aceptar la invitación con Google', () => {
   });
 
   it('si otra pestaña aceptó la invitación mientras se canjeaba el código, responde 400 y no cierra sesiones ni avisa', async () => {
-    const { account, prisma, tokens, mailer } = await setup({
+    const { account, prisma, tokens, mailer, notifications } = await setup({
       existing: { id: 'user-1', email: INVITED, emailVerifiedAt: null },
       claimCount: 0,
     });
@@ -356,6 +386,7 @@ describe('AccountService: aceptar la invitación con Google', () => {
     expect(prisma.storeMember.upsert).not.toHaveBeenCalled();
     expect(tokens.revokeAllForUser).not.toHaveBeenCalled();
     expect(mailer.send).not.toHaveBeenCalled();
+    expect(notifications.notifyPlatform).not.toHaveBeenCalled();
   });
 
   it('si Google no confirma el correo, el rechazo llega tal cual y no escribe nada', async () => {

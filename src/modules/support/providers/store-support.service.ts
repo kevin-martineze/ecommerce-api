@@ -5,6 +5,7 @@ import {
   StoreSupportTicketDto,
 } from '@shared/dtos/support/support.dto';
 import { PrismaService, TenantClient } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 
 import { CreateSupportTicketInput } from '../support.schemas';
 
@@ -24,6 +25,7 @@ export class StoreSupportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifier: SupportNotifier,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(storeId: string): Promise<StoreSupportListDto> {
@@ -88,6 +90,12 @@ export class StoreSupportService {
       storeName: store.name,
       subject: input.subject,
       isNew: true,
+    });
+
+    // Sin el asunto ni el texto: el caso se lee dentro de la consola.
+    await this.notifications.notifyPlatform({
+      type: 'SUPPORT_TICKET_OPENED',
+      data: { ticketId, storeId, storeName: store.name },
     });
 
     return this.thread(storeId, ticketId);
@@ -163,6 +171,11 @@ export class StoreSupportService {
       storeName: store.name,
       subject: ticket.subject,
       isNew: false,
+    });
+
+    await this.notifications.notifyPlatform({
+      type: 'SUPPORT_OWNER_REPLIED',
+      data: { ticketId, storeId, storeName: store.name },
     });
 
     return this.thread(storeId, ticketId);

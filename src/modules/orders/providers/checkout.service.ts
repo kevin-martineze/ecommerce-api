@@ -32,6 +32,7 @@ import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
 import { startOfMonthInBogota } from '@shared/utils/bogota-time';
 import { blankToNull } from '@shared/utils/text';
 import { isUniqueViolation, PrismaService, TenantClient } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 import {
   VARIANT_INCLUDE,
   variantLabel,
@@ -68,6 +69,14 @@ const CREATED_SELECT = {
 
 type CreatedOrder = Prisma.OrderGetPayload<{ select: typeof CREATED_SELECT }>;
 
+/**
+ * Lo que sale de `placeOrder`. `created` distingue el pedido recién hecho del
+ * que devuelve una repetición idempotente: solo el primero avisa a la tienda.
+ */
+type PlacedOrder =
+  | { created: false; order: OrderCreatedDto }
+  | { created: true; order: OrderCreatedDto; itemCount: number };
+
 /** Una línea ya validada y con precio de hoy: exactamente lo que se copia al pedido. */
 interface PricedLine {
   variantId: string;
@@ -95,6 +104,7 @@ export class CheckoutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stores: PublicStoreResolver,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async shippingZones(storeSlug: string): Promise<PublicShippingZoneDto[]> {
@@ -215,8 +225,10 @@ export class CheckoutService {
   ): Promise<OrderCreatedDto> {
     const store = await this.stores.resolve(storeSlug);
 
+    let placed: PlacedOrder;
+
     try {
-      return await this.prisma.forStore(store.id, (tx) =>
+      placed = await this.prisma.forStore(store.id, (tx) =>
         this.placeOrder(tx, store.id, dto, idempotencyKey),
       );
     } catch (error) {
@@ -228,6 +240,7 @@ export class CheckoutService {
           findByIdempotencyKey(tx, store.id, idempotencyKey),
         );
 
+        // El pedido lo creó (y lo avisó) el otro envío.
         if (existing) {
           return toCreated(existing);
         }
@@ -235,6 +248,24 @@ export class CheckoutService {
 
       throw error;
     }
+
+    // Después de confirmar la transacción: un aviso que fallara adentro
+    // revertiría el pedido. `notifyStore` nunca lanza.
+    if (placed.created) {
+      await this.notifications.notifyStore(store.id, {
+        type: 'ORDER_PLACED',
+        data: {
+          orderId: placed.order.id,
+          number: placed.order.number,
+          total: placed.order.total,
+          itemCount: placed.itemCount,
+          // Un pedido nace sin pagar: el pago en línea llega después, con su evento.
+          paid: false,
+        },
+      });
+    }
+
+    return placed.order;
   }
 
   async publicOrder(storeSlug: string, number: number, token: string): Promise<PublicOrderDto> {
@@ -281,12 +312,12 @@ export class CheckoutService {
     storeId: string,
     dto: CreateOrderDto,
     idempotencyKey: string | null,
-  ): Promise<OrderCreatedDto> {
+  ): Promise<PlacedOrder> {
     if (idempotencyKey) {
       const previous = await findByIdempotencyKey(tx, storeId, idempotencyKey);
 
       if (previous) {
-        return toCreated(previous);
+        return { created: false, order: toCreated(previous) };
       }
     }
 
@@ -315,7 +346,7 @@ export class CheckoutService {
       const previous = await findByIdempotencyKey(tx, storeId, idempotencyKey);
 
       if (previous) {
-        return toCreated(previous);
+        return { created: false, order: toCreated(previous) };
       }
     }
 
@@ -442,7 +473,11 @@ export class CheckoutService {
       });
     }
 
-    return toCreated(order);
+    return {
+      created: true,
+      order: toCreated(order),
+      itemCount: priced.reduce((sum, line) => sum + line.qty, 0),
+    };
   }
 }
 

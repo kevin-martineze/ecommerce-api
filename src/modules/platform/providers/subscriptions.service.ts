@@ -23,6 +23,7 @@ import {
 } from '@shared/dtos/platform/platform.dto';
 import { startOfMonthInBogota } from '@shared/utils/bogota-time';
 import { PrismaService } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 
 const DAY_MS = 86_400_000;
 
@@ -57,6 +58,7 @@ export class SubscriptionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService<Env, true>,
+    private readonly notifications: NotificationsService,
     @Inject(PaymentGateway) private readonly gateway: PaymentGateway | null,
   ) {}
 
@@ -358,14 +360,32 @@ export class SubscriptionsService {
       if (event.status === 'pending') return 'pending';
 
       this.logger.warn(`El cobro del plan de la tienda ${store.id} fue rechazado.`);
+      await this.notifyChargeFailed(store, plan);
 
       return 'failed';
     } catch (error: unknown) {
       await this.recordCharge(store.id, { increment: true });
       this.logger.error(`No se pudo cobrar el plan de la tienda ${store.id}: ${String(error)}`);
+      await this.notifyChargeFailed(store, plan);
 
       return 'failed';
     }
+  }
+
+  /**
+   * A la plataforma: falló el cobro automático. Uno por intento, y el cron no
+   * intenta dos veces el mismo día (`lastChargeAt`), así que no se repite.
+   */
+  private async notifyChargeFailed(store: { id: string; name: string }, plan: Plan): Promise<void> {
+    await this.notifications.notifyPlatform({
+      type: 'SUBSCRIPTION_FAILED',
+      data: {
+        storeId: store.id,
+        storeName: store.name,
+        amountCop: plan.priceCop,
+        planCode: plan.code,
+      },
+    });
   }
 
   /** Deja constancia del intento: sin esto, el cron cobraría otra vez mañana y hoy. */
@@ -489,6 +509,17 @@ export class SubscriptionsService {
     }
 
     this.logger.log(`Plan ${plan.code} al día para la tienda ${destino.storeId} (${event.method})`);
+
+    // Solo un pago aplicado avisa: el repetido ya salió arriba.
+    await this.notifications.notifyPlatform({
+      type: 'SUBSCRIPTION_PAID',
+      data: {
+        storeId: destino.storeId,
+        storeName: store.name,
+        amountCop: event.amountCop,
+        planCode: plan.code,
+      },
+    });
   }
 
   private async plan(code: string): Promise<Plan> {

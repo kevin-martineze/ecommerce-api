@@ -798,3 +798,21 @@ tocar a quien publica ni a quien escucha.
 
 El bus no guarda nada. La bandeja en la base es la fuente: una conexión que se
 perdió un aviso lo recupera al reconectar, leyendo la base.
+
+### Quién avisa y cuándo
+
+| Aviso                   | Dónde                                                             | Solo si                                                          |
+| ----------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `ORDER_PLACED`          | `CheckoutService.createOrder`                                     | el pedido es nuevo, no una repetición con `Idempotency-Key`      |
+| `ORDER_PAID`            | `OrderPaymentsService.applyPayment`                               | el pedido pasa a `PAID` ahora; la fila se bloquea antes          |
+| `STORE_CREATED`         | `AuthService.registerStore`, `registerWithGoogle` y `createStore` | siempre; una cuenta nueva con tienda es UN aviso, no dos         |
+| `USER_REGISTERED`       | `AccountService.acceptInvitation` y `acceptInvitationWithGoogle`  | la invitación crea una cuenta que no existía                     |
+| `SUBSCRIPTION_PAID`     | `SubscriptionsService.applyPayment`                               | el pago se aplica; el repetido sale antes                        |
+| `SUBSCRIPTION_FAILED`   | `SubscriptionsService.chargeDue`                                  | el cobro automático se rechaza o la pasarela falla; no `pending` |
+| `SUPPORT_TICKET_OPENED` | `StoreSupportService.create`                                      | siempre                                                          |
+| `SUPPORT_OWNER_REPLIED` | `StoreSupportService.reply`                                       | siempre                                                          |
+
+El cobro automático corre en el cron (`src/tasks/charge-due.ts`), que es
+**otro proceso**: su bus en memoria no es el de la API, así que el aviso de un
+cobro fallido queda en la bandeja pero no sale en vivo. Aparece al recargar o
+al reconectar. Con `LISTEN/NOTIFY` saldría en vivo también.

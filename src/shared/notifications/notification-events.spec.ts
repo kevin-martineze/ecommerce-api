@@ -64,7 +64,8 @@ describe('avisos de plataforma', () => {
         type: 'STORE_CREATED',
         data: { storeId: STORE, storeName: 'Luna', slug: 'luna', userId: USER, newAccount: true },
       },
-      { type: 'USER_REGISTERED', data: { userId: USER } },
+      { type: 'USER_REGISTERED', data: { userId: USER, storeId: STORE, storeName: 'Luna' } },
+      { type: 'USER_REGISTERED', data: { userId: USER, storeId: null, storeName: null } },
       {
         type: 'SUBSCRIPTION_PAID',
         data: { storeId: STORE, storeName: 'Luna', amountCop: 49900, planCode: 'basico' },

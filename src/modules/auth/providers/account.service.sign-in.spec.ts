@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { Mailer } from '@shared/mail/mailer';
 import { PrismaService } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 
 import { AccountService } from './account.service';
 import { AuthService } from './auth.service';
@@ -81,6 +82,10 @@ function setup(state: State = {}) {
           { provide: GoogleAuthService, useValue: {} },
           { provide: Mailer, useValue: mailer },
           { provide: ConfigService, useValue: new ConfigService({ FRONTEND_URL: FRONTEND }) },
+          {
+            provide: NotificationsService,
+            useValue: { notifyStore: jest.fn(), notifyPlatform: jest.fn() },
+          },
         ],
       }).compile();
 

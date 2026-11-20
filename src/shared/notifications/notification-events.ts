@@ -60,9 +60,20 @@ const storeCreated = z.object({
     .strict(),
 });
 
+/**
+ * Una cuenta que nace sin tienda propia: hoy, solo al aceptar una invitación.
+ * `storeId` / `storeName` dicen a qué tienda entró; null si algún día una
+ * cuenta nace por otro camino.
+ */
 const userRegistered = z.object({
   type: z.literal('USER_REGISTERED'),
-  data: z.object({ userId: id }).strict(),
+  data: z
+    .object({
+      userId: id,
+      storeId: id.nullable(),
+      storeName: storeName.nullable(),
+    })
+    .strict(),
 });
 
 const subscriptionData = z

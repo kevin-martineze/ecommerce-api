@@ -7,10 +7,18 @@ import { OrderCheckoutDto, PaymentLinkDto } from '@shared/dtos/payments/payments
 import { PaymentEvent, PaymentGateway } from '@shared/payments/gateway';
 import { safeReturnUrl } from '@shared/payments/return-url';
 import { PrismaService } from '@db/prisma.service';
+import { NotificationsService } from '@modules/notifications/providers/notifications.service';
 import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
 import { PublicStoreResolver } from '@shared/tenancy/public-store.resolver';
 
 import { StorePaymentsService } from './store-payments.service';
+
+/** Lo que el aviso de pago necesita del pedido. */
+interface PaidOrder {
+  id: string;
+  number: number;
+  total: number;
+}
 
 /** Lo que antecede a la referencia del cobro de un pedido. */
 const ORDER_PREFIX = 'ord';
@@ -32,6 +40,7 @@ export class OrderPaymentsService {
     private readonly stores: PublicStoreResolver,
     private readonly accounts: StorePaymentsService,
     private readonly config: ConfigService<Env, true>,
+    private readonly notifications: NotificationsService,
     @Inject(PaymentGateway) private readonly gateway: PaymentGateway | null,
   ) {}
 
@@ -119,19 +128,31 @@ export class OrderPaymentsService {
 
     if (!orderId) return;
 
-    await this.prisma.forStore(storeId, async (tx) => {
+    const paid = await this.prisma.forStore(storeId, async (tx): Promise<PaidOrder | null> => {
+      // Dos entregas simultáneas del mismo evento se serializan acá: la
+      // segunda espera a la primera y ya ve la referencia escrita. Sin el
+      // lock, las dos pasarían el chequeo y la dueña recibiría dos avisos.
+      await tx.$queryRaw`
+        select id from orders where store_id = ${storeId}::uuid and id = ${orderId}::uuid for update`;
+
       const order = await tx.order.findFirst({
         where: { id: orderId, storeId },
-        select: { id: true, total: true, paymentStatus: true, paymentReference: true },
+        select: {
+          id: true,
+          number: true,
+          total: true,
+          paymentStatus: true,
+          paymentReference: true,
+        },
       });
 
       if (!order) {
         this.logger.warn(`Pago ${event.transactionId} de un pedido que no es de esta tienda.`);
 
-        return;
+        return null;
       }
 
-      if (order.paymentReference === event.transactionId) return;
+      if (order.paymentReference === event.transactionId) return null;
 
       if (event.status !== 'approved') {
         await tx.order.updateMany({
@@ -139,7 +160,7 @@ export class OrderPaymentsService {
           data: { paymentStatus: event.status === 'pending' ? 'PENDING' : 'FAILED' },
         });
 
-        return;
+        return null;
       }
 
       // Un pago por menos del total no paga el pedido. Queda anotado como
@@ -154,7 +175,7 @@ export class OrderPaymentsService {
           data: { paymentStatus: 'FAILED' },
         });
 
-        return;
+        return null;
       }
 
       await tx.order.updateMany({
@@ -167,7 +188,18 @@ export class OrderPaymentsService {
       });
 
       this.logger.log(`Pedido ${order.id} pagado (${event.method}).`);
+
+      // Solo la transición avisa: un segundo pago aprobado sobre un pedido que
+      // ya estaba pagado no es noticia para la dueña.
+      return order.paymentStatus === 'PAID' ? null : order;
     });
+
+    if (paid) {
+      await this.notifications.notifyStore(storeId, {
+        type: 'ORDER_PAID',
+        data: { orderId: paid.id, number: paid.number, total: paid.total },
+      });
+    }
   }
 
   /**

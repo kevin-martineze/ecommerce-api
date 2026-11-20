@@ -345,6 +345,15 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
 
       // La cascada desde `stores` arrastra todo el catálogo; la de `users`, las sesiones.
       await withOwner(async (client) => {
+        // Los avisos de plataforma de esta corrida no cuelgan de ninguna
+        // tienda: sin esto, cada tienda de prueba le dejaría un "tienda nueva"
+        // a quien administre la plataforma en la base de desarrollo.
+        await client.query(
+          `delete from platform_notifications
+           where data->>'storeId' = any($1::text[])
+              or data->>'userId' in (select id::text from users where email = any($2::text[]))`,
+          [storeIds, emails],
+        );
         await client.query('delete from stores where id = any($1::uuid[])', [storeIds]);
         await client.query('delete from users where email = any($1::text[])', [emails]);
       });
