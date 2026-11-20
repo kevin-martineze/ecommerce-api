@@ -302,9 +302,11 @@ describe('Pagos de la tienda (e2e)', () => {
     });
 
     it('la referencia dice de qué tienda es el pedido', async () => {
-      const cobro = await pub<Link>('POST', `/orders/${pedido.number}/checkout`, {
-        token: pedido.token,
-        redirectUrl: 'http://localhost:5173/pedido/1',
+      // Uno nuevo: el primero ya está pago y no se vuelve a cobrar.
+      const otro = await nuevoPedido();
+      const cobro = await pub<Link>('POST', `/orders/${otro.number}/checkout`, {
+        token: otro.token,
+        redirectUrl: 'http://localhost:5173/pedido/5',
       });
 
       expect(cobro.body.reference.startsWith(`ord-${shop.storeId}-`)).toBe(true);
