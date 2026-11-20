@@ -51,8 +51,8 @@ const MAX_LIFETIME_MS = 30 * 60_000;
  *   comprimirían el stream, y comprimido no sale nada hasta llenar un bloque.
  *
  * Al conectar con `after` (el último aviso que vio), primero reenvía lo que se
- * perdió y después lo nuevo, sin repetir: lo que llega en vivo mientras se lee
- * la base espera en una cola.
+ * perdió (`event: missed`) y después lo nuevo (`event: notification`), sin
+ * repetir: lo que llega en vivo mientras se lee la base espera en una cola.
  */
 @ApiTags('avisos')
 @OpenRoute()
@@ -105,14 +105,16 @@ export class NotificationStreamController implements OnModuleDestroy {
     const queued: NotificationDto[] = [];
     let replaying = true;
 
-    const send = (notification: NotificationDto): void => {
+    // `missed`: lo reenviado al reconectar, que el panel agrega sin anunciar.
+    // `notification`: lo que llega en vivo, que el panel anuncia con un toast.
+    const send = (notification: NotificationDto, event: 'notification' | 'missed'): void => {
       if (raw.writableEnded || raw.destroyed || sent.has(notification.id)) {
         return;
       }
 
       sent.add(notification.id);
       raw.write(
-        `id: ${notification.id}\nevent: notification\ndata: ${JSON.stringify(notification)}\n\n`,
+        `id: ${notification.id}\nevent: ${event}\ndata: ${JSON.stringify(notification)}\n\n`,
       );
     };
 
@@ -120,7 +122,7 @@ export class NotificationStreamController implements OnModuleDestroy {
       if (replaying) {
         queued.push(notification);
       } else {
-        send(notification);
+        send(notification, 'notification');
       }
     });
 
@@ -150,7 +152,7 @@ export class NotificationStreamController implements OnModuleDestroy {
     if (query.after) {
       try {
         for (const notification of await this.stream.missedSince(claims, query.after)) {
-          send(notification);
+          send(notification, 'missed');
         }
       } catch {
         // La respuesta ya es nuestra: un error acá no puede subir al filtro.
@@ -162,7 +164,7 @@ export class NotificationStreamController implements OnModuleDestroy {
     replaying = false;
 
     for (const notification of queued) {
-      send(notification);
+      send(notification, 'notification');
     }
   }
 

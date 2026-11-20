@@ -841,7 +841,9 @@ conexión larga por pestaña ocuparía una función todo el rato.
   la comprimirían. En Caddy, la ruta va aparte, sin `encode` y con
   `flush_interval -1`.
 - **`after`**: al reconectar, primero se reenvían desde la base hasta 50 avisos
-  posteriores a ese id, en orden, y después lo nuevo, sin repetir.
+  posteriores a ese id, en orden, como `event: missed`; después lo nuevo, como
+  `event: notification`, sin repetir. El panel anuncia con toast solo lo
+  segundo.
 - Latido cada 25 s, `retry: 5000` y cierre a los 30 minutos: el navegador
   reconecta con un ticket nuevo, y una membresía revocada no queda escuchando
   con un ticket viejo. Al apagar la API se cierran todas, para no colgar el

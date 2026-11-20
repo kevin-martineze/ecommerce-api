@@ -82,12 +82,16 @@ class StreamReader {
     }
   }
 
-  /** Espera hasta tener `count` eventos `notification` y los devuelve. */
-  async notifications(count: number, timeoutMs = 3_000): Promise<Frame[]> {
+  /** Espera hasta tener `count` eventos de ese tipo y los devuelve. */
+  async notifications(
+    count: number,
+    timeoutMs = 3_000,
+    event: 'notification' | 'missed' = 'notification',
+  ): Promise<Frame[]> {
     const deadline = Date.now() + timeoutMs;
 
     for (;;) {
-      const found = this.frames.filter((frame) => frame.event === 'notification');
+      const found = this.frames.filter((frame) => frame.event === event);
 
       if (found.length >= count) return found;
 
@@ -327,7 +331,7 @@ describe('Stream de avisos (e2e)', () => {
       await notifications.notifyStore(owner.storeId, orderPaid(12));
 
       const again = await connect(`ticket=${(await storeTicket()).ticket}&after=${seen?.id}`);
-      const replayed = await again.notifications(2);
+      const replayed = await again.notifications(2, 3_000, 'missed');
 
       expect(replayed.map((frame) => JSON.parse(frame.data ?? 'null').data.number)).toEqual([
         11, 12,
