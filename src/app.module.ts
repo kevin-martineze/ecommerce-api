@@ -17,6 +17,7 @@ import { CommerceModule } from '@modules/commerce/commerce.module';
 import { ContentModule } from '@modules/content/content.module';
 import { DomainsModule } from '@modules/domains/domains.module';
 import { HealthModule } from '@modules/health/health.module';
+import { NotificationsModule } from '@modules/notifications/notifications.module';
 import { OrdersModule } from '@modules/orders/orders.module';
 import { StorePaymentsModule } from '@modules/payments/payments.module';
 import { PlatformModule } from '@modules/platform/platform.module';
@@ -63,6 +64,7 @@ import { PrismaModule } from '@db/prisma.module';
     StorePaymentsModule,
     TeamModule,
     SupportModule,
+    NotificationsModule,
     HealthModule,
   ],
   providers: [

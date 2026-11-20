@@ -748,3 +748,53 @@ Degradar o quitar a una dueña bloquea las filas de todas las dueñas de la
 tienda antes de contarlas. Dos dueñas que se degradan la una a la otra a la
 vez se serializan, y la segunda ve el resultado de la primera. Quitar a alguien
 además cierra sus sesiones atadas a esa tienda.
+
+---
+
+## 15. Avisos del panel y de la consola
+
+Cada evento que le importa a una dueña (pedido nuevo, pedido pagado) o a la
+plataforma (tienda creada, cobros del plan, soporte) deja un aviso en una
+bandeja y se reparte en vivo a quien tenga el panel abierto. El plan completo
+vive en `shopping-sas/docs/plan-notificaciones-tiempo-real.md`.
+
+### Dos tablas, una fila por destinataria
+
+- `store_notifications`: bajo RLS, una fila por miembro de la tienda. Dueña y
+  personal reciben lo mismo; una cuenta deshabilitada no recibe nada.
+- `platform_notifications`: sin `store_id`, una fila por administradora de la
+  plataforma. Meter estos avisos en la tabla de tienda con `store_id` nulo los
+  dejaría invisibles para la política, o exigiría abrir una de "plataforma ve
+  todo": el agujero que RLS existe para no tener.
+
+Una fila por persona, y no una por evento con una tabla de lecturas, porque lo
+leído es de cada quien y el contador sale del índice de la bandeja sin unirse a
+nada.
+
+### Qué puede decir un aviso
+
+`data` se valida con zod al escribir y al leer
+(`shared/notifications/notification-events.ts`), con `.strict()`: solo ids,
+números, montos y nombres de la tienda. **Nunca datos de una clienta.** Un aviso
+se muestra en un toast, queda en la bandeja de cada miembro y, más adelante, se
+reenvía por push; el detalle se ve al abrir el enlace, dentro de la sesión.
+
+### Nunca tumba a quien avisa
+
+`NotificationsService.notifyStore` / `notifyPlatform` se llaman **después** de
+confirmar la transacción del disparador y nunca lanzan. Dentro de la
+transacción, un fallo del aviso revertiría el pedido; y un aviso publicado
+dentro de una transacción que después se revierte anunciaría un pedido que no
+existe. Si falla, se registra el id de la tienda y el tipo, nada más.
+
+### El reparto en vivo
+
+`NotificationBus` es abstracto y hoy lo implementa `InMemoryNotificationBus`,
+un `EventEmitter` por canal (`store:<tienda>:<persona>` o
+`platform:<persona>`). Alcanza porque la API corre en **una sola instancia**.
+Con dos, una conexión abierta en la A no se enteraría de un pedido creado en la
+B: ahí se cambia por una implementación sobre `LISTEN/NOTIFY` de Postgres, sin
+tocar a quien publica ni a quien escucha.
+
+El bus no guarda nada. La bandeja en la base es la fuente: una conexión que se
+perdió un aviso lo recupera al reconectar, leyendo la base.

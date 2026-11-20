@@ -89,20 +89,20 @@ model Store {
 
   /// Estado del dominio propio. Null junto con `customDomain`: lo fuerza un CHECK
   /// en la migración. `disabled` no se guarda: lo calcula la API según el plan.
-  customDomainStatus CustomDomainStatus? @map("custom_domain_status")
+  customDomainStatus     CustomDomainStatus? @map("custom_domain_status")
   /// Token aleatorio por tienda y por host: va en el TXT `_globerce.<host>` que
   /// prueba que la tienda controla el dominio.
-  customDomainToken String? @map("custom_domain_token")
+  customDomainToken      String?             @map("custom_domain_token")
   /// Los registros DNS que pidió el proveedor, tal como se le muestran a la dueña.
-  customDomainRecords Json? @map("custom_domain_records") @db.JsonB
+  customDomainRecords    Json?               @map("custom_domain_records") @db.JsonB
   /// Última vez que el DNS estuvo bien. Null mientras nunca lo estuvo.
-  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at") @db.Timestamptz(6)
+  customDomainVerifiedAt DateTime?           @map("custom_domain_verified_at") @db.Timestamptz(6)
   /// Última revisión del DNS, la hecha por la dueña o por el chequeo diario.
-  customDomainCheckedAt DateTime? @map("custom_domain_checked_at") @db.Timestamptz(6)
+  customDomainCheckedAt  DateTime?           @map("custom_domain_checked_at") @db.Timestamptz(6)
   /// Lo que falta para que el dominio funcione. Null cuando está bien.
-  customDomainError String? @map("custom_domain_error")
+  customDomainError      String?             @map("custom_domain_error")
   /// Cuándo se registró el host. Un `pending` de más de 7 días se libera solo.
-  customDomainAddedAt DateTime? @map("custom_domain_added_at") @db.Timestamptz(6)
+  customDomainAddedAt    DateTime?           @map("custom_domain_added_at") @db.Timestamptz(6)
 
   status StoreStatus @default(TRIAL)
 
@@ -146,6 +146,7 @@ model Store {
   invitations     StoreInvitation[]
   supportTickets  SupportTicket[]
   supportMessages SupportMessage[]
+  notifications   StoreNotification[]
 
   @@map("stores")
 }
@@ -191,7 +192,7 @@ model StorePaymentAccount {
   eventsSecretSealed    String @map("events_secret_sealed")
 
   /// Nombre comercial que devuelve Wompi (`data.name`) al verificar la llave.
-  merchantName String? @map("merchant_name")
+  merchantName String?   @map("merchant_name")
   /// Último evento de la pasarela que pasó la firma. Sirve para saber si Wompi ya nos está avisando.
   lastEventAt  DateTime? @map("last_event_at") @db.Timestamptz(6)
 
@@ -296,8 +297,10 @@ model User {
   payments               Payment[]
   passwordResetTokens    PasswordResetToken[]
   sentInvitations        StoreInvitation[]
-  supportTicketsOpened   SupportTicket[]      @relation("SupportTicketOpenedBy")
-  supportMessagesWritten SupportMessage[]     @relation("SupportMessageAuthoredBy")
+  supportTicketsOpened   SupportTicket[]        @relation("SupportTicketOpenedBy")
+  supportMessagesWritten SupportMessage[]       @relation("SupportMessageAuthoredBy")
+  storeNotifications     StoreNotification[]
+  platformNotifications  PlatformNotification[]
 
   @@map("users")
 }
@@ -1186,4 +1189,87 @@ model SupportMessage {
   @@index([ticketId, createdAt], map: "support_messages_ticket_created_idx")
   @@index([storeId, author, createdAt], map: "support_messages_store_author_created_idx")
   @@map("support_messages")
+}
+
+/// Lo que se le avisa a quien trabaja en una tienda.
+enum StoreNotificationType {
+  /// Llegó un pedido nuevo.
+  ORDER_PLACED
+  /// Un pedido pasó a pagado.
+  ORDER_PAID
+
+  @@map("store_notification_type")
+}
+
+/// Lo que se le avisa a quien administra la plataforma.
+enum PlatformNotificationType {
+  /// Se creó una tienda. `data.newAccount` dice si la cuenta también es nueva.
+  STORE_CREATED
+  /// Se creó una cuenta sin tienda.
+  USER_REGISTERED
+  /// Entró el pago del plan de una tienda.
+  SUBSCRIPTION_PAID
+  /// Falló el cobro del plan de una tienda.
+  SUBSCRIPTION_FAILED
+  /// Una dueña abrió un caso de soporte.
+  SUPPORT_TICKET_OPENED
+  /// Una dueña escribió en un caso que ya existía.
+  SUPPORT_OWNER_REPLIED
+
+  @@map("platform_notification_type")
+}
+
+/// Aviso del panel para UNA persona de UNA tienda.
+///
+/// Una fila por destinataria, no por evento: lo leído es de cada quien, y el
+/// contador de no leídos sale de un índice sin unirse a nada. Bajo RLS como
+/// todo lo que cuelga de una tienda.
+///
+/// `data` lleva solo ids, números y nombres de la tienda, nunca datos de una
+/// clienta: el aviso se muestra en un toast y se puede reenviar por push, y el
+/// detalle se ve al abrir el enlace, dentro de la sesión. La forma la valida
+/// `shared/notifications/notification-events.ts` al escribir y al leer.
+model StoreNotification {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+
+  type StoreNotificationType
+  data Json
+
+  /// Cuándo lo vio la destinataria. Null: sin leer.
+  readAt DateTime? @map("read_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, userId, createdAt(sort: Desc), id(sort: Desc)], map: "store_notifications_inbox_idx")
+  @@map("store_notifications")
+}
+
+/// Aviso de la consola para UNA persona que administra la plataforma.
+///
+/// Tabla aparte y sin `store_id` a propósito: un aviso de plataforma habla de
+/// muchas tiendas, y meterlo en la tabla de tienda con `store_id` nulo lo
+/// dejaría invisible bajo RLS o exigiría una política de "plataforma ve todo",
+/// que es el agujero que RLS existe para no tener. La tienda de la que habla,
+/// si habla de una, va dentro de `data`.
+model PlatformNotification {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  type PlatformNotificationType
+  data Json
+
+  /// Cuándo lo vio la destinataria. Null: sin leer.
+  readAt DateTime? @map("read_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "platform_notifications_inbox_idx")
+  @@map("platform_notifications")
 }
