@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { StorePaymentsModule } from '@modules/payments/payments.module';
 
 import { PaymentEventsController } from './controllers/payment-events.controller';
 import { PlatformController } from './controllers/platform.controller';
@@ -22,6 +23,8 @@ import { SubscriptionsService } from './providers/subscriptions.service';
  * porque se aplican donde se crea lo que el plan acota.
  */
 @Module({
+  // Los avisos de pedidos que llegan por la URL de la plataforma se le pasan a la tienda.
+  imports: [StorePaymentsModule],
   controllers: [
     PlatformController,
     PlatformUsersController,

@@ -5,6 +5,7 @@ import { OrderPaymentsController } from './controllers/order-payments.controller
 import { StoreEventsController } from './controllers/store-events.controller';
 import { StorePaymentsController } from './controllers/store-payments.controller';
 import { OrderPaymentsService } from './providers/order-payments.service';
+import { StoreEventsService } from './providers/store-events.service';
 import { StorePaymentsService } from './providers/store-payments.service';
 
 /**
@@ -17,7 +18,7 @@ import { StorePaymentsService } from './providers/store-payments.service';
  */
 @Module({
   controllers: [StorePaymentsController, OrderPaymentsController, StoreEventsController],
-  providers: [PublicStoreResolver, StorePaymentsService, OrderPaymentsService],
-  exports: [StorePaymentsService],
+  providers: [PublicStoreResolver, StorePaymentsService, OrderPaymentsService, StoreEventsService],
+  exports: [StorePaymentsService, StoreEventsService],
 })
 export class StorePaymentsModule {}

@@ -3,7 +3,6 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
-  Inject,
   Param,
   Post,
   UnauthorizedException,
@@ -11,10 +10,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { OpenRoute } from '@shared/decorators/open-route.decorator';
-import { PaymentGateway } from '@shared/payments/gateway';
 
-import { OrderPaymentsService } from '../providers/order-payments.service';
-import { StorePaymentsService } from '../providers/store-payments.service';
+import { StoreEventsService } from '../providers/store-events.service';
 
 /**
  * Lo que la pasarela de UNA tienda nos cuenta sobre sus pedidos.
@@ -28,11 +25,7 @@ import { StorePaymentsService } from '../providers/store-payments.service';
 @ApiTags('pagos')
 @Controller('payments/events')
 export class StoreEventsController {
-  constructor(
-    private readonly accounts: StorePaymentsService,
-    private readonly orders: OrderPaymentsService,
-    @Inject(PaymentGateway) private readonly gateway: PaymentGateway | null,
-  ) {}
+  constructor(private readonly events: StoreEventsService) {}
 
   @Post(':storeId')
   @OpenRoute()
@@ -43,20 +36,9 @@ export class StoreEventsController {
     @Param('storeId') storeId: string,
     @Body() body: unknown,
   ): Promise<{ received: true }> {
-    if (!this.gateway) {
+    if (!(await this.events.receive(storeId, body))) {
       throw new UnauthorizedException('No autorizado.');
     }
-
-    const credentials = await this.accounts.credentials(storeId);
-    const event = this.gateway.parseEvent(body, credentials ?? undefined);
-
-    if (!event) {
-      throw new UnauthorizedException('No autorizado.');
-    }
-
-    // La firma cuadró: Wompi está hablando con esta tienda. Lo guarda el panel para mostrarlo.
-    await this.accounts.markEventReceived(storeId);
-    await this.orders.applyPayment(storeId, event);
 
     return { received: true };
   }

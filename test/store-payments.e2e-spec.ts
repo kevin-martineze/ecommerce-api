@@ -100,6 +100,13 @@ describe('Pagos de la tienda (e2e)', () => {
   const avisar = (reference: string, amountCop: number) =>
     api.call('POST', `/payments/events/${shop.storeId}`, undefined, { reference, amountCop });
 
+  /**
+   * Lo mismo, pero por la URL de la plataforma: la tienda cobra con la misma
+   * cuenta de Wompi que Globerce, y Wompi solo tiene una URL de eventos.
+   */
+  const avisarPlataforma = (reference: string, amountCop: number) =>
+    api.call('POST', '/payments/events', undefined, { reference, amountCop });
+
   /** Otro pedido igual al primero, para lo que no se puede probar dos veces. */
   const nuevoPedido = async (): Promise<OrderCreated> => {
     const creado = await pub<OrderCreated>('POST', '/orders', {
@@ -292,6 +299,49 @@ describe('Pagos de la tienda (e2e)', () => {
       await avisar(cobro.body.reference, cobro.body.amountCop);
 
       expect((await verPedido()).body.paidAt).toBe(antes.paidAt);
+    });
+
+    it('la referencia dice de qué tienda es el pedido', async () => {
+      const cobro = await pub<Link>('POST', `/orders/${pedido.number}/checkout`, {
+        token: pedido.token,
+        redirectUrl: 'http://localhost:5173/pedido/1',
+      });
+
+      expect(cobro.body.reference.startsWith(`ord-${shop.storeId}-`)).toBe(true);
+    });
+
+    it('también llega por la URL de la plataforma, y se le pasa a la tienda', async () => {
+      const otro = await nuevoPedido();
+      const cobro = await pub<Link>('POST', `/orders/${otro.number}/checkout`, {
+        token: otro.token,
+        redirectUrl: 'http://localhost:5173/pedido/3',
+      });
+
+      const respuesta = await avisarPlataforma(cobro.body.reference, cobro.body.amountCop);
+
+      expect(respuesta.status).toBe(200);
+
+      const { body } = await pub<PublicOrder>('GET', `/orders/${otro.number}?token=${otro.token}`);
+
+      expect(body.paymentStatus).toBe('PAID');
+    });
+
+    it('un pedido con la referencia de otra tienda no se marca', async () => {
+      const otro = await nuevoPedido();
+      const cobro = await pub<Link>('POST', `/orders/${otro.number}/checkout`, {
+        token: otro.token,
+        redirectUrl: 'http://localhost:5173/pedido/4',
+      });
+      const ajena = cobro.body.reference.replace(
+        shop.storeId,
+        '00000000-0000-4000-8000-000000000000',
+      );
+
+      await avisar(ajena, cobro.body.amountCop);
+
+      const { body } = await pub<PublicOrder>('GET', `/orders/${otro.number}?token=${otro.token}`);
+
+      expect(body.paymentStatus).not.toBe('PAID');
     });
 
     it('un pago por menos del total no paga el pedido', async () => {
