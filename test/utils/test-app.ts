@@ -111,6 +111,12 @@ export interface TestApp {
   withOwner<T>(work: (client: Client) => Promise<T>): Promise<T>;
   /** Un servicio de la aplicación levantada, para probar tareas que no pasan por HTTP. */
   get<T>(type: abstract new (...args: never[]) => T): T;
+  /**
+   * Abre un puerto de verdad y devuelve la base (`http://127.0.0.1:<puerto>/v1`).
+   * Para lo que `inject` no puede probar: respuestas que no terminan, como el
+   * stream de avisos.
+   */
+  listen(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -259,6 +265,12 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
     withOwner,
     get: <T>(type: abstract new (...args: never[]) => T): T => app.get<T>(type),
     mediaDir,
+
+    async listen(): Promise<string> {
+      await app.listen(0, '127.0.0.1');
+
+      return `${await app.getUrl()}/v1`;
+    },
 
     forgetStore(storeId: string): void {
       storeIds.push(storeId);

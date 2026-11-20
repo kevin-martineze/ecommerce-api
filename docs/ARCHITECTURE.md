@@ -44,11 +44,12 @@ compilador exige.
 
 ## 3. Las tres superficies
 
-| Prefijo                   | Quién entra       | Qué la protege                        |
-| ------------------------- | ----------------- | ------------------------------------- |
-| `/v1/public/:storeSlug/*` | visitante anónimo | sin auth, `@Throttle` propio por ruta |
-| `/v1/stores/:storeId/*`   | dueña y personal  | `JwtAuthGuard` + `StoreRolesGuard`    |
-| `/v1/platform/*`          | administración    | `JwtAuthGuard` + `PlatformAdminGuard` |
+| Prefijo                    | Quién entra       | Qué la protege                        |
+| -------------------------- | ----------------- | ------------------------------------- |
+| `/v1/public/:storeSlug/*`  | visitante anónimo | sin auth, `@Throttle` propio por ruta |
+| `/v1/stores/:storeId/*`    | dueña y personal  | `JwtAuthGuard` + `StoreRolesGuard`    |
+| `/v1/platform/*`           | administración    | `JwtAuthGuard` + `PlatformAdminGuard` |
+| `/v1/notifications/stream` | el navegador      | ticket de 60 s (ver § 15)             |
 
 Separarlas por prefijo, y no por lógica dentro de un mismo controlador, es
 deliberado: cuando la superficie pública y la privada comparten ruta, tarde o
@@ -816,3 +817,35 @@ El cobro automático corre en el cron (`src/tasks/charge-due.ts`), que es
 **otro proceso**: su bus en memoria no es el de la API, así que el aviso de un
 cobro fallido queda en la bandeja pero no sale en vivo. Aparece al recargar o
 al reconectar. Con `LISTEN/NOTIFY` saldría en vivo también.
+
+### El stream: la única ruta que llama el navegador
+
+`GET /v1/notifications/stream?ticket=…&after=…` es SSE. Todo lo demás lo llama
+el servidor de SvelteKit; esto no, porque el front corre en Vercel y una
+conexión larga por pestaña ocuparía una función todo el rato.
+
+- **Ticket.** `POST /stores/:storeId/notifications/stream-ticket` o
+  `POST /platform/notifications/stream-ticket`, con la sesión normal. Es un JWT
+  con el mismo secreto, `aud: notifications-stream` y 60 s de vida. La
+  estrategia de sesión rechaza todo token con `aud`, así que el ticket no abre
+  el panel; el stream exige ese `aud`, así que un access token no abre el
+  stream. Va en la URL porque `EventSource` no manda cabeceras: por eso dura
+  tan poco y por eso `redactUrl` lo borra de los logs de Fastify y del filtro
+  de errores.
+- **Al conectar** se vuelve a mirar la base (membresía o `PlatformAdmin`, y
+  cuenta activa): el ticket prueba quién era hace un minuto, no quién es.
+- **`@OpenRoute`**: el navegador no tiene el secreto del frontend; la puerta es
+  el ticket. `Access-Control-Allow-Origin: *` sin credenciales, porque el panel
+  vive en subdominios y dominios propios que no están en `CORS_ORIGINS`.
+- **La respuesta se escribe a mano** (`reply.hijack()`): los hooks de Fastify
+  la comprimirían. En Caddy, la ruta va aparte, sin `encode` y con
+  `flush_interval -1`.
+- **`after`**: al reconectar, primero se reenvían desde la base hasta 50 avisos
+  posteriores a ese id, en orden, y después lo nuevo, sin repetir.
+- Latido cada 25 s, `retry: 5000` y cierre a los 30 minutos: el navegador
+  reconecta con un ticket nuevo, y una membresía revocada no queda escuchando
+  con un ticket viejo. Al apagar la API se cierran todas, para no colgar el
+  apagado.
+
+`PUBLIC_API_URL` es la base que se le da al navegador; ya tenía que ser
+alcanzable desde internet por los eventos de la pasarela.

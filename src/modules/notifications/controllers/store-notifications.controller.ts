@@ -5,6 +5,7 @@ import { StoreRoute } from '@shared/decorators/store-route.decorator';
 import {
   NotificationListDto,
   NotificationReadDto,
+  StreamTicketDto,
   StoreNotificationDto,
 } from '@shared/dtos/notifications/notifications.dto';
 import { ZodPipe } from '@shared/validation/zod-pipe';
@@ -16,6 +17,7 @@ import {
   notificationListQuerySchema,
 } from '../notifications.schemas';
 import { NotificationsService } from '../providers/notifications.service';
+import { StreamTicketsService } from '../providers/stream-tickets.service';
 
 /**
  * La bandeja de avisos de quien trabaja en la tienda. Sin `@Roles`: dueña y
@@ -26,7 +28,10 @@ import { NotificationsService } from '../providers/notifications.service';
 @StoreRoute()
 @Controller('stores/:storeId/notifications')
 export class StoreNotificationsController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly tickets: StreamTicketsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Avisos de esta persona en la tienda, del más nuevo al más viejo.' })
@@ -47,5 +52,15 @@ export class StoreNotificationsController {
     @Body(new ZodPipe(markNotificationsReadSchema)) input: MarkNotificationsReadInput,
   ): Promise<NotificationReadDto> {
     return this.notifications.markStoreRead(storeId, user.id, input);
+  }
+
+  @Post('stream-ticket')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Ticket de 60 s para abrir el stream de avisos de esta tienda.' })
+  streamTicket(
+    @Param('storeId') storeId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<StreamTicketDto> {
+    return this.tickets.issue(user.id, { kind: 'store', storeId });
   }
 }

@@ -1,12 +1,24 @@
 # Caddy pide y renueva el certificado del dominio de la API, y pasa todo a la
 # API por la red interna de compose.
 {$API_DOMAIN} {
-	encode zstd gzip
+	# El stream de avisos (SSE) es lo único que el navegador abre directo. Va
+	# sin comprimir y sin buffer: comprimido, nada sale hasta llenar un bloque,
+	# y el aviso de un pedido llegaría minutos tarde.
+	@notifications_stream path */notifications/stream
+	handle @notifications_stream {
+		reverse_proxy api:3000 {
+			flush_interval -1
+		}
+	}
 
-	# `X-Forwarded-For` lo pone Caddy con la IP real de quien llamó, que es el
-	# servidor del frontend. La IP de la visitante llega dentro, la manda el
-	# frontend y la API se la cree porque antes pasó el secreto compartido.
-	reverse_proxy api:3000
+	handle {
+		encode zstd gzip
+
+		# `X-Forwarded-For` lo pone Caddy con la IP real de quien llamó, que es el
+		# servidor del frontend. La IP de la visitante llega dentro, la manda el
+		# frontend y la API se la cree porque antes pasó el secreto compartido.
+		reverse_proxy api:3000
+	}
 
 	log {
 		output stdout

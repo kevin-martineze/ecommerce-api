@@ -5,6 +5,7 @@ import { PlatformRoute } from '@shared/decorators/platform-route.decorator';
 import {
   NotificationListDto,
   NotificationReadDto,
+  StreamTicketDto,
   PlatformNotificationDto,
 } from '@shared/dtos/notifications/notifications.dto';
 import { ZodPipe } from '@shared/validation/zod-pipe';
@@ -16,13 +17,17 @@ import {
   notificationListQuerySchema,
 } from '../notifications.schemas';
 import { NotificationsService } from '../providers/notifications.service';
+import { StreamTicketsService } from '../providers/stream-tickets.service';
 
 /** La bandeja de avisos de la consola. Solo administradores de la plataforma. */
 @ApiTags('plataforma')
 @PlatformRoute()
 @Controller('platform/notifications')
 export class PlatformNotificationsController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly tickets: StreamTicketsService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -43,5 +48,12 @@ export class PlatformNotificationsController {
     @Body(new ZodPipe(markNotificationsReadSchema)) input: MarkNotificationsReadInput,
   ): Promise<NotificationReadDto> {
     return this.notifications.markPlatformRead(user.id, input);
+  }
+
+  @Post('stream-ticket')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Ticket de 60 s para abrir el stream de avisos de la consola.' })
+  streamTicket(@CurrentUser() user: AuthenticatedUser): Promise<StreamTicketDto> {
+    return this.tickets.issue(user.id, { kind: 'platform' });
   }
 }

@@ -35,3 +35,12 @@ export interface NotificationReadDto {
   /** No leídos que quedan después de marcar. */
   unread: number;
 }
+
+/** Con qué abrir el stream de avisos desde el navegador. */
+export interface StreamTicketDto {
+  /** `EventSource(url + '?ticket=…')`. */
+  url: string;
+  /** JWT de un solo uso práctico: sirve 60 s y solo para abrir el stream. */
+  ticket: string;
+  expiresAt: string;
+}

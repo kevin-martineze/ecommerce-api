@@ -17,3 +17,14 @@ export const markNotificationsReadSchema = z.object({
 
 export type NotificationListQuery = z.infer<typeof notificationListQuerySchema>;
 export type MarkNotificationsReadInput = z.infer<typeof markNotificationsReadSchema>;
+
+/**
+ * Lo que trae la URL del stream. Un `after` mal formado se ignora en vez de
+ * responder 400: `EventSource` reintentaría la misma URL para siempre.
+ */
+export const streamQuerySchema = z.object({
+  ticket: z.string().min(1).max(4096).optional(),
+  after: z.string().uuid().optional().catch(undefined),
+});
+
+export type StreamQuery = z.infer<typeof streamQuerySchema>;
