@@ -19,6 +19,7 @@ export const STOREFRONT_TEMPLATES = [
   'vibrante',
   'atelier',
   'moda',
+  'maison',
 ] as const;
 
 export type StorefrontTemplate = (typeof STOREFRONT_TEMPLATES)[number];
