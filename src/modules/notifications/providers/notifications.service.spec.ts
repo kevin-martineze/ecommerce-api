@@ -3,6 +3,7 @@ import { NotificationBus } from '@shared/notifications/notification-bus';
 import { PrismaService } from '@db/prisma.service';
 
 import { NotificationsService } from './notifications.service';
+import { PushService } from './push.service';
 
 const STORE = '11111111-1111-4111-8111-111111111111';
 const ORDER = '44444444-4444-4444-8444-444444444444';
@@ -15,6 +16,7 @@ async function setup(prisma: object) {
       NotificationsService,
       { provide: PrismaService, useValue: prisma },
       { provide: NotificationBus, useValue: bus },
+      { provide: PushService, useValue: { deliver: jest.fn() } },
     ],
   }).compile();
 

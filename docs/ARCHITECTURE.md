@@ -851,3 +851,27 @@ conexión larga por pestaña ocuparía una función todo el rato.
 
 `PUBLIC_API_URL` es la base que se le da al navegador; ya tenía que ser
 alcanzable desde internet por los eventos de la pasarela.
+
+### Push, con el panel cerrado
+
+Cada aviso también sale por Web Push (VAPID, `web-push`) a los navegadores
+que lo pidieron. Sin `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT`
+(las tres o ninguna) el `PushSender` es `DisabledPushSender` y no sale nada.
+
+- **`push_subscriptions`**: una fila por navegador y por bandeja (`store_id`,
+  o nulo para la consola). Es de la cuenta, sin RLS, como `refresh_tokens`;
+  por eso está exenta en `tenant-scope.arch-spec.ts`. El mismo navegador
+  puede pedir la tienda y la consola.
+- **Rutas**: `GET push-key`, `PUT` y `DELETE push-subscriptions`, bajo
+  `/stores/:storeId/notifications` y `/platform/notifications`.
+- **Solo servicios push conocidos** (`isKnownPushEndpoint`: FCM, Mozilla,
+  Apple, WNS, por https y sin puerto). El endpoint lo manda el navegador y la
+  API le hace un POST: sin la lista, sería una puerta para que la API llame a
+  direcciones internas.
+- **Si el navegador cambia de cuenta**, al suscribirse se borran las filas de
+  ese endpoint que eran de otra cuenta.
+- **Viaja el mismo aviso de la bandeja** (el DTO), cifrado de punta a punta
+  (RFC 8291); el texto lo arma el service worker del frontend. TTL 24 h.
+- **No se espera el envío**: `notify*` reparte y sigue. Un 404/410 borra la
+  suscripción; cualquier otro error se ignora.
+- El cron de cobros manda push igual que la API (no depende del bus).

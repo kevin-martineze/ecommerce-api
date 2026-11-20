@@ -1,10 +1,11 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthenticatedUser, CurrentUser } from '@shared/decorators/current-user.decorator';
 import { StoreRoute } from '@shared/decorators/store-route.decorator';
 import {
   NotificationListDto,
   NotificationReadDto,
+  PushKeyDto,
   StreamTicketDto,
   StoreNotificationDto,
 } from '@shared/dtos/notifications/notifications.dto';
@@ -15,8 +16,13 @@ import {
   markNotificationsReadSchema,
   NotificationListQuery,
   notificationListQuerySchema,
+  PushSubscriptionInput,
+  pushSubscriptionSchema,
+  RemovePushSubscriptionInput,
+  removePushSubscriptionSchema,
 } from '../notifications.schemas';
 import { NotificationsService } from '../providers/notifications.service';
+import { PushService } from '../providers/push.service';
 import { StreamTicketsService } from '../providers/stream-tickets.service';
 
 /**
@@ -31,6 +37,7 @@ export class StoreNotificationsController {
   constructor(
     private readonly notifications: NotificationsService,
     private readonly tickets: StreamTicketsService,
+    private readonly push: PushService,
   ) {}
 
   @Get()
@@ -62,5 +69,33 @@ export class StoreNotificationsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<StreamTicketDto> {
     return this.tickets.issue(user.id, { kind: 'store', storeId });
+  }
+
+  @Get('push-key')
+  @ApiOperation({ summary: 'Llave pública VAPID para suscribirse a push. Null si no hay push.' })
+  pushKey(): PushKeyDto {
+    return { publicKey: this.push.publicKey };
+  }
+
+  @Put('push-subscriptions')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Este navegador recibe por push los avisos de esta tienda.' })
+  async subscribePush(
+    @Param('storeId') storeId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodPipe(pushSubscriptionSchema)) input: PushSubscriptionInput,
+  ): Promise<void> {
+    await this.push.subscribe(user.id, storeId, input);
+  }
+
+  @Delete('push-subscriptions')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Este navegador deja de recibir por push los avisos de esta tienda.' })
+  async unsubscribePush(
+    @Param('storeId') storeId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodPipe(removePushSubscriptionSchema)) input: RemovePushSubscriptionInput,
+  ): Promise<void> {
+    await this.push.unsubscribe(user.id, storeId, input.endpoint);
   }
 }

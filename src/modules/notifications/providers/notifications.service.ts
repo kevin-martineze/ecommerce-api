@@ -21,6 +21,7 @@ import { PrismaService } from '@db/prisma.service';
 import { MarkNotificationsReadInput, NotificationListQuery } from '../notifications.schemas';
 
 import { present, toPlatformNotificationDto, toStoreNotificationDto } from './notification-mapping';
+import { PushDelivery, PushService } from './push.service';
 
 /**
  * La bandeja de avisos: quién recibe cada uno, guardarlo y repartirlo.
@@ -30,6 +31,9 @@ import { present, toPlatformNotificationDto, toStoreNotificationDto } from './no
  * `forStore`. Si el aviso fallara dentro, revertiría el pedido; si se publicara
  * dentro y la transacción se revirtiera después, avisaría de un pedido que no
  * existe.
+ *
+ * Cada aviso sale por tres lados: la bandeja (la fila), el stream (el bus) y
+ * los navegadores suscritos a push (`PushService`, sin esperar).
  *
  * Por lo mismo, `notify*` nunca lanza: un aviso perdido es una molestia, un
  * pedido que no se guardó por culpa del aviso es una venta perdida. Se
@@ -42,6 +46,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bus: NotificationBus,
+    private readonly push: PushService,
   ) {}
 
   /**
@@ -75,13 +80,18 @@ export class NotificationsService {
         });
       });
 
+      const deliveries: PushDelivery[] = [];
+
       for (const row of rows) {
         const dto = toStoreNotificationDto(row);
 
         if (dto) {
           this.bus.publish(storeChannel(storeId, row.userId), dto);
+          deliveries.push({ userId: row.userId, notification: dto });
         }
       }
+
+      this.push.deliver(storeId, deliveries);
     } catch {
       this.logger.warn(`No se pudo guardar el aviso ${event.type} de la tienda ${storeId}.`);
     }
@@ -113,13 +123,18 @@ export class NotificationsService {
         data: admins.map((admin) => ({ userId: admin.userId, type, data })),
       });
 
+      const deliveries: PushDelivery[] = [];
+
       for (const row of rows) {
         const dto = toPlatformNotificationDto(row);
 
         if (dto) {
           this.bus.publish(platformChannel(row.userId), dto);
+          deliveries.push({ userId: row.userId, notification: dto });
         }
       }
+
+      this.push.deliver(null, deliveries);
     } catch {
       this.logger.warn(`No se pudo guardar el aviso ${event.type} de la plataforma.`);
     }

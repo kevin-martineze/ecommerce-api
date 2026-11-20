@@ -34,8 +34,11 @@ const SOURCE_ROOT = join(__dirname, '..');
  * - `RefreshToken`: su `storeId` es la tienda activa de la sesión, no su
  *   dueña. La sesión es de la cuenta y se busca por el hash del token, antes
  *   de saber nada de tiendas.
+ * - `PushSubscription`: su `storeId` es la bandeja que pidió el navegador (o
+ *   null, la consola). Es de la cuenta y se busca por `endpoint`, que es del
+ *   navegador y no de una tienda.
  */
-const EXEMPT_MODELS = new Set(['RefreshToken']);
+const EXEMPT_MODELS = new Set(['RefreshToken', 'PushSubscription']);
 
 const QUERY_METHODS = new Set([
   'findUnique',

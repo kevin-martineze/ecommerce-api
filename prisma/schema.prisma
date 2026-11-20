@@ -121,32 +121,33 @@ model Store {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  members         StoreMember[]
-  settings        StoreSettings?
-  aiReplies       AiReply[]
-  paymentAccount  StorePaymentAccount?
-  subscription    Subscription?
-  payments        Payment[]
-  categories      Category[]
-  products        Product[]
-  productImages   ProductImage[]
-  productOptions  ProductOption[]
-  productValues   ProductOptionValue[]
-  productAttrs    ProductAttribute[]
-  variants        Variant[]
-  variantValues   VariantOptionValue[]
-  collections     Collection[]
-  collectionItems CollectionProduct[]
-  coupons         Coupon[]
-  shippingZones   ShippingZone[]
-  orders          Order[]
-  orderItems      OrderItem[]
-  restockRequests RestockRequest[]
-  homeHighlights  HomeHighlight[]
-  invitations     StoreInvitation[]
-  supportTickets  SupportTicket[]
-  supportMessages SupportMessage[]
-  notifications   StoreNotification[]
+  members           StoreMember[]
+  settings          StoreSettings?
+  aiReplies         AiReply[]
+  paymentAccount    StorePaymentAccount?
+  subscription      Subscription?
+  payments          Payment[]
+  categories        Category[]
+  products          Product[]
+  productImages     ProductImage[]
+  productOptions    ProductOption[]
+  productValues     ProductOptionValue[]
+  productAttrs      ProductAttribute[]
+  variants          Variant[]
+  variantValues     VariantOptionValue[]
+  collections       Collection[]
+  collectionItems   CollectionProduct[]
+  coupons           Coupon[]
+  shippingZones     ShippingZone[]
+  orders            Order[]
+  orderItems        OrderItem[]
+  restockRequests   RestockRequest[]
+  homeHighlights    HomeHighlight[]
+  invitations       StoreInvitation[]
+  supportTickets    SupportTicket[]
+  supportMessages   SupportMessage[]
+  notifications     StoreNotification[]
+  pushSubscriptions PushSubscription[]
 
   @@map("stores")
 }
@@ -301,6 +302,7 @@ model User {
   supportMessagesWritten SupportMessage[]       @relation("SupportMessageAuthoredBy")
   storeNotifications     StoreNotification[]
   platformNotifications  PlatformNotification[]
+  pushSubscriptions      PushSubscription[]
 
   @@map("users")
 }
@@ -1272,4 +1274,28 @@ model PlatformNotification {
 
   @@index([userId, createdAt(sort: Desc), id(sort: Desc)], map: "platform_notifications_inbox_idx")
   @@map("platform_notifications")
+}
+
+/// Un navegador que pidió avisos push para UNA bandeja: la de una tienda o,
+/// con `storeId` null, la de la consola. Es de la cuenta, no de la tienda: se
+/// busca por `endpoint`, sin RLS, igual que `RefreshToken`.
+model PushSubscription {
+  id      String  @id @default(uuid()) @db.Uuid
+  userId  String  @map("user_id") @db.Uuid
+  /// La bandeja. Null: la de la consola.
+  storeId String? @map("store_id") @db.Uuid
+
+  /// La dirección del servicio push del navegador. Solo de servicios conocidos.
+  endpoint String
+  /// Las llaves del navegador para cifrar el mensaje (RFC 8291).
+  p256dh   String
+  auth     String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, userId], map: "push_subscriptions_inbox_idx")
+  @@map("push_subscriptions")
 }

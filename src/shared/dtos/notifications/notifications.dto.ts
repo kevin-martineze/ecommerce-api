@@ -44,3 +44,8 @@ export interface StreamTicketDto {
   ticket: string;
   expiresAt: string;
 }
+
+/** Con qué se suscribe el navegador a push. Null: este entorno no manda push. */
+export interface PushKeyDto {
+  publicKey: string | null;
+}
