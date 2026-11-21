@@ -1,11 +1,28 @@
-import { Session, startTestApp, TestApp } from './utils/test-app';
+import sharp from 'sharp';
+
+import { Session, startTestApp, TestApp, TestFile } from './utils/test-app';
 
 /**
  * Plataforma de punta a punta: quién puede entrar, pagos, suspensión, planes
- * y sus límites, y lo que la tienda ve de su propia suscripción.
+ * y sus límites, lo que la tienda ve de su propia suscripción, y en qué etapa
+ * del embudo de activación va cada tienda.
  */
 
 jest.setTimeout(60_000);
+
+interface ActivationRow {
+  stage: string;
+  stageReachedAt: string;
+  firstProductAt: string | null;
+  firstOrderAt: string | null;
+  firstSaleAt: string | null;
+  firstPaymentAt: string | null;
+  lastSeenAt: string | null;
+  activeProductsWithPhoto: number;
+  hasLogo: boolean;
+  wompiConnected: boolean;
+  contactPhone: string | null;
+}
 
 interface StoreRow {
   id: string;
@@ -17,6 +34,18 @@ interface StoreRow {
   trialEndsAt: string | null;
   members: { email: string; role: string }[];
   productCount: number;
+  activation: ActivationRow;
+}
+
+/** Una foto real, generada con sharp: un PNG de un color. */
+async function photo(): Promise<TestFile> {
+  const data = await sharp({
+    create: { width: 800, height: 1000, channels: 3, background: { r: 200, g: 120, b: 90 } },
+  })
+    .png()
+    .toBuffer();
+
+  return { field: 'file', filename: 'foto.png', contentType: 'image/png', data };
 }
 
 interface StoreDetail extends StoreRow {
@@ -414,6 +443,142 @@ describe('Plataforma (e2e)', () => {
       expect(summary.body.overdue.map((store) => store.id)).toEqual(
         expect.arrayContaining([trial.storeId, paid.storeId]),
       );
+    });
+  });
+
+  describe('embudo de activación', () => {
+    let vacia: Session;
+    let catalogo: Session;
+    let pedido: Session;
+
+    beforeAll(async () => {
+      vacia = await api.register('embudo-vacia');
+      catalogo = await api.register('embudo-catalogo');
+      pedido = await api.register('embudo-pedido');
+
+      // Sin foto: activo, pero todavía no es catálogo.
+      await api.seedProduct(vacia, { name: 'Sin foto', basePrice: 1000, status: 'ACTIVE' }, [], 5);
+
+      const blusa = await api.seedProduct(
+        catalogo,
+        { name: 'Blusa', basePrice: 1000, status: 'ACTIVE' },
+        [],
+        5,
+      );
+
+      await api.upload(
+        'POST',
+        `/stores/${catalogo.storeId}/products/${blusa.id}/images`,
+        catalogo,
+        await photo(),
+      );
+
+      const falda = await api.seedProduct(
+        pedido,
+        { name: 'Falda', basePrice: 1000, status: 'ACTIVE' },
+        [],
+        5,
+      );
+
+      await api.upload(
+        'POST',
+        `/stores/${pedido.storeId}/products/${falda.id}/images`,
+        pedido,
+        await photo(),
+      );
+
+      const zona = await api.call<{ id: string }>(
+        'POST',
+        `/stores/${pedido.storeId}/shipping-zones`,
+        pedido,
+        { name: 'Bogotá', cost: 8000, etaDays: 2 },
+      );
+
+      const compra = await api.call('POST', `/public/${pedido.slug}/orders`, undefined, {
+        customer: { name: 'Ana Gómez', phone: '300 123 4567', city: 'Bogotá' },
+        shippingZoneId: zona.body.id,
+        items: [{ variantId: falda.variants[0]?.id ?? '', qty: 1 }],
+      });
+
+      expect(compra.status).toBe(201);
+    });
+
+    const fila = async (session: Session) =>
+      (await platform<StoreRow[]>('GET', `/stores?q=${session.slug}`)).body.find(
+        (store) => store.id === session.storeId,
+      );
+
+    it('cada tienda dice en qué etapa va: la más alta que alcanzó', async () => {
+      expect((await fila(vacia))?.activation).toMatchObject({
+        stage: 'created',
+        activeProductsWithPhoto: 0,
+      });
+      expect((await fila(catalogo))?.activation).toMatchObject({
+        stage: 'catalog',
+        activeProductsWithPhoto: 1,
+      });
+      expect((await fila(pedido))?.activation.stage).toBe('first_order');
+      // Ya registró pagos en esta suite: paga Globerce, aunque no tenga pedidos.
+      expect((await fila(shop))?.activation.stage).toBe('paying');
+    });
+
+    it('el detalle trae las fechas de cada hito y la lista de control', async () => {
+      const { status, body } = await platform<StoreDetail>('GET', `/stores/${pedido.storeId}`);
+
+      expect(status).toBe(200);
+      expect(body.activation).toMatchObject({
+        stage: 'first_order',
+        firstSaleAt: null,
+        firstPaymentAt: null,
+        activeProductsWithPhoto: 1,
+        hasLogo: false,
+        wompiConnected: false,
+        contactPhone: '573001234567',
+      });
+      expect(body.activation.firstProductAt).not.toBeNull();
+      expect(body.activation.firstOrderAt).not.toBeNull();
+      expect(body.activation.stageReachedAt).toBe(body.activation.firstOrderAt);
+      // Se registró hace un momento: la última entrada al panel ya está.
+      expect(body.activation.lastSeenAt).not.toBeNull();
+    });
+
+    it('?stage= filtra por la etapa de hoy; una etapa que no existe es 400', async () => {
+      const solo = await platform<StoreRow[]>('GET', `/stores?stage=catalog&q=${catalogo.slug}`);
+
+      expect(solo.status).toBe(200);
+      expect(solo.body.map((store) => store.id)).toEqual([catalogo.storeId]);
+
+      // La de pedido ya no está en catálogo: avanzó.
+      const ninguna = await platform<StoreRow[]>('GET', `/stores?stage=catalog&q=${pedido.slug}`);
+
+      expect(ninguna.body).toEqual([]);
+      expect((await platform('GET', '/stores?stage=oro')).status).toBe(400);
+    });
+
+    it('el embudo del dashboard cuenta cada etapa alcanzada, de forma acumulada', async () => {
+      const { status, body } = await platform<{
+        activation: {
+          created: number;
+          catalog: number;
+          firstOrder: number;
+          firstSale: number;
+          paying: number;
+        };
+      }>('GET', '/dashboard');
+
+      expect(status).toBe(200);
+
+      const { created, catalog, firstOrder, firstSale, paying } = body.activation;
+
+      // Acumulado: quien llega a una etapa también cuenta en las de antes.
+      expect(created).toBeGreaterThanOrEqual(catalog);
+      expect(catalog).toBeGreaterThanOrEqual(firstOrder);
+      expect(firstOrder).toBeGreaterThanOrEqual(firstSale);
+      expect(firstSale).toBeGreaterThanOrEqual(paying);
+      // Catálogo, pedido y la tienda que paga: las tres llegaron a catálogo.
+      expect(catalog).toBeGreaterThanOrEqual(3);
+      expect(firstOrder).toBeGreaterThanOrEqual(2);
+      expect(paying).toBeGreaterThanOrEqual(1);
     });
   });
 });

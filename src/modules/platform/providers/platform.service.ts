@@ -9,6 +9,7 @@ import {
   PlatformStoreListQueryDto,
   ReconcileResultDto,
   RecordPaymentDto,
+  StoreActivationDto,
   UpdateStoreStatusDto,
 } from '@shared/dtos/platform/platform.dto';
 import { ConfigService } from '@nestjs/config';
@@ -18,6 +19,7 @@ import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
 import { publicUrl } from '@shared/tenancy/public-url';
 import { PrismaService } from '@db/prisma.service';
 
+import { readActivation } from './activation';
 import { toDateOnly, toPlanDto } from './subscriptions.service';
 
 const STORE_INCLUDE = {
@@ -37,9 +39,10 @@ interface SubscriptionRow {
 }
 
 /**
- * Lo que de una tienda vive bajo RLS y la consola necesita: su suscripción y
- * cuánto lleva. Se lee con el contexto de esa tienda; sin él, `products` y
- * `orders` devuelven cero filas y la consola mostraría "0 / 0" para todas.
+ * Lo que de una tienda vive bajo RLS y la consola necesita: su suscripción,
+ * cuánto lleva y en qué etapa va. Se lee con el contexto de esa tienda; sin
+ * él, `products` y `orders` devuelven cero filas y la consola mostraría "0 / 0"
+ * para todas.
  */
 interface TenantSummary {
   subscription: SubscriptionRow | null;
@@ -47,6 +50,7 @@ interface TenantSummary {
   orderCount: number;
   /** Si el plan vigente incluye dominio propio: decide si la dirección pública es la del dominio. */
   planAllowsCustomDomain: boolean;
+  activation: StoreActivationDto;
 }
 
 /** Hasta cuántas tiendas devuelve el listado. Una plataforma con más ya necesita paginar. */
@@ -107,9 +111,13 @@ export class PlatformService {
     const rows: PlatformStoreDto[] = [];
 
     for (const store of stores) {
-      const summary = await this.tenantSummary(store.id);
+      const summary = await this.tenantSummary(store);
 
       if (query.overdue && !isOverdue(store, summary.subscription, new Date())) {
+        continue;
+      }
+
+      if (query.stage && summary.activation.stage !== query.stage) {
         continue;
       }
 
@@ -134,6 +142,7 @@ export class PlatformService {
         subscription,
         productCount: await tx.product.count({ where: { storeId } }),
         orderCount: await tx.order.count({ where: { storeId } }),
+        activation: await readActivation(tx, storeId, store.createdAt),
       };
 
       return {
@@ -259,7 +268,15 @@ export class PlatformService {
     let markedPastDue = 0;
 
     for (const store of candidates) {
-      if (!isOverdue(store, (await this.tenantSummary(store.id)).subscription, now)) {
+      // Solo la suscripción: el resumen completo traería el embudo, que el cron no usa.
+      const subscription = await this.prisma.forStore(store.id, (tx) =>
+        tx.subscription.findUnique({
+          where: { storeId: store.id },
+          select: { currentPeriodEnd: true },
+        }),
+      );
+
+      if (!isOverdue(store, subscription, now)) {
         continue;
       }
 
@@ -287,15 +304,16 @@ export class PlatformService {
     return store;
   }
 
-  private tenantSummary(storeId: string): Promise<TenantSummary> {
-    return this.prisma.forStore(storeId, async (tx) => ({
-      planAllowsCustomDomain: await planAllowsCustomDomain(tx, storeId),
+  private tenantSummary(store: Pick<Store, 'id' | 'createdAt'>): Promise<TenantSummary> {
+    return this.prisma.forStore(store.id, async (tx) => ({
+      planAllowsCustomDomain: await planAllowsCustomDomain(tx, store.id),
       subscription: await tx.subscription.findUnique({
-        where: { storeId },
+        where: { storeId: store.id },
         select: { planCode: true, status: true, currentPeriodEnd: true, notes: true },
       }),
-      productCount: await tx.product.count({ where: { storeId } }),
-      orderCount: await tx.order.count({ where: { storeId } }),
+      productCount: await tx.product.count({ where: { storeId: store.id } }),
+      orderCount: await tx.order.count({ where: { storeId: store.id } }),
+      activation: await readActivation(tx, store.id, store.createdAt),
     }));
   }
 }
@@ -339,6 +357,7 @@ function toStoreDto(
     })),
     productCount: summary.productCount,
     orderCount: summary.orderCount,
+    activation: summary.activation,
   };
 }
 
