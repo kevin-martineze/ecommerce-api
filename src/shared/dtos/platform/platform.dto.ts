@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { ACTIVATION_STAGES, ActivationStage } from '@shared/domains/activation';
 import { PaymentWidgetDto } from '@shared/dtos/payments/payments.dto';
 import { QueryBoolean, Trim } from '@shared/dtos/transforms';
 
@@ -168,6 +169,48 @@ export class SubscriptionSummaryDto {
 // Administración de la plataforma
 // ---------------------------------------------------------------------------
 
+/** Hasta dónde llegó una tienda en el embudo de activación. */
+export class StoreActivationDto {
+  @ApiProperty({ enum: ACTIVATION_STAGES, description: 'La etapa más alta que alcanzó.' })
+  stage!: ActivationStage;
+
+  @ApiProperty({ description: 'Cuándo alcanzó esa etapa.' })
+  stageReachedAt!: Date;
+
+  @ApiProperty({ nullable: true, description: 'Primer producto activo con foto.' })
+  firstProductAt!: Date | null;
+
+  @ApiProperty({ nullable: true, description: 'Primer pedido que no está cancelado.' })
+  firstOrderAt!: Date | null;
+
+  @ApiProperty({ nullable: true, description: 'Primer pedido pagado o entregado.' })
+  firstSaleAt!: Date | null;
+
+  @ApiProperty({ nullable: true, description: 'Primer pago registrado: la tienda paga Globerce.' })
+  firstPaymentAt!: Date | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Última renovación de sesión del panel. Null si nunca entró.',
+  })
+  lastSeenAt!: Date | null;
+
+  @ApiProperty()
+  activeProductsWithPhoto!: number;
+
+  @ApiProperty({ description: 'Si tiene logo o ya personalizó su plantilla.' })
+  hasLogo!: boolean;
+
+  @ApiProperty({ description: 'Si tiene una cuenta de Wompi activa.' })
+  wompiConnected!: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Número de WhatsApp de la tienda, tal como lo guardó. Null si está vacío.',
+  })
+  contactPhone!: string | null;
+}
+
 export class PlatformStoreListQueryDto {
   @ApiPropertyOptional({ description: 'Nombre o slug de la tienda, o correo de una dueña.' })
   @IsOptional()
@@ -185,6 +228,14 @@ export class PlatformStoreListQueryDto {
   @IsOptional()
   @QueryBoolean()
   overdue?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ACTIVATION_STAGES,
+    description: 'Solo las tiendas que están en esta etapa hoy.',
+  })
+  @IsOptional()
+  @IsIn(ACTIVATION_STAGES)
+  stage?: ActivationStage;
 }
 
 export class PlatformMemberDto {
@@ -256,6 +307,9 @@ export class PlatformStoreDto {
 
   @ApiProperty()
   orderCount!: number;
+
+  @ApiProperty({ type: StoreActivationDto })
+  activation!: StoreActivationDto;
 }
 
 export class PaymentDto {
@@ -428,6 +482,24 @@ export class PlatformPaymentDto extends PaymentDto {
   storeSlug!: string;
 }
 
+/** Cuántas tiendas alcanzaron cada etapa. Acumulado: una en `firstSale` cuenta también en `catalog` y `firstOrder`. */
+export class ActivationFunnelDto {
+  @ApiProperty()
+  created!: number;
+
+  @ApiProperty()
+  catalog!: number;
+
+  @ApiProperty()
+  firstOrder!: number;
+
+  @ApiProperty()
+  firstSale!: number;
+
+  @ApiProperty()
+  paying!: number;
+}
+
 export class PlatformDashboardDto {
   @ApiProperty({ type: StoreCountsDto })
   stores!: StoreCountsDto;
@@ -461,6 +533,9 @@ export class PlatformDashboardDto {
     description: 'Los últimos 10 pagos, el más nuevo primero.',
   })
   recentPayments!: PlatformPaymentDto[];
+
+  @ApiProperty({ type: ActivationFunnelDto, description: 'Cuántas tiendas llegan a cada etapa.' })
+  activation!: ActivationFunnelDto;
 }
 
 export class PaymentsQueryDto {

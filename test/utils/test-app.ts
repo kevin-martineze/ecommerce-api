@@ -5,6 +5,7 @@ import { rm } from 'node:fs/promises';
 
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import fastifyMultipart from '@fastify/multipart';
 import { Client } from 'pg';
 import { Assistant } from '@shared/ai/assistant';
@@ -157,6 +158,15 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
   if (options.pushSender) {
     builder.overrideProvider(PushSender).useValue(options.pushSender);
   }
+
+  // El límite por IP (p. ej. 5 registros por minuto) está para producción. Las
+  // peticiones de prueba salen todas de 127.0.0.1 y una suite que crea varias
+  // tiendas lo cruzaría: fallaría por el techo, no por lo que prueba. El
+  // contador nunca bloquea; el límite no tiene e2e propio.
+  builder.overrideProvider(ThrottlerStorage).useValue({
+    increment: () =>
+      Promise.resolve({ totalHits: 0, timeToExpire: 0, isBlocked: false, timeToBlockExpire: 0 }),
+  });
 
   // Sin un Google de mentira, cualquier llamada a Google falla en vez de salir
   // a internet con las credenciales falsas de setup-env.

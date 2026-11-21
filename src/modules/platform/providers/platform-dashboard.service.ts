@@ -5,11 +5,14 @@ import {
   OverdueStoreDto,
   PlatformDashboardDto,
   PlatformPaymentDto,
+  StoreActivationDto,
   TrialEndingDto,
 } from '@shared/dtos/platform/platform.dto';
+import { ActivationStage } from '@shared/domains/activation';
 import { bogotaMonthKey, bogotaMonthRange } from '@shared/utils/bogota-time';
 import { PrismaService } from '@db/prisma.service';
 
+import { readActivation, stagesReachedBy } from './activation';
 import { daysUntil, toDateOnly } from './subscriptions.service';
 
 const DAY_MS = 86_400_000;
@@ -25,6 +28,7 @@ const STORE_SELECT = {
   slug: true,
   status: true,
   trialEndsAt: true,
+  createdAt: true,
   members: {
     where: { role: 'OWNER' },
     orderBy: { createdAt: 'asc' },
@@ -35,10 +39,11 @@ const STORE_SELECT = {
 
 type StoreRow = Prisma.StoreGetPayload<{ select: typeof STORE_SELECT }>;
 
-/** Lo que de una tienda vive bajo RLS y el resumen necesita. */
+/** Lo que de una tienda vive bajo RLS y el resumen necesita: su cobro y su embudo. */
 interface TenantBilling {
   subscription: { status: string; planPriceCop: number; currentPeriodEnd: Date } | null;
   payments: Payment[];
+  activation: StoreActivationDto;
 }
 
 /**
@@ -62,6 +67,13 @@ export class PlatformDashboardService {
     );
 
     const counts = { total: stores.length, trial: 0, active: 0, pastDue: 0, suspended: 0 };
+    const funnel: Record<ActivationStage, number> = {
+      created: 0,
+      catalog: 0,
+      first_order: 0,
+      first_sale: 0,
+      paying: 0,
+    };
     let payingStores = 0;
     let mrr = 0;
     let revenueThisMonth = 0;
@@ -73,7 +85,11 @@ export class PlatformDashboardService {
     for (const store of stores) {
       counts[countKey(store.status)] += 1;
 
-      const billing = await this.billingOf(store.id);
+      const billing = await this.billingOf(store);
+
+      for (const stage of stagesReachedBy(billing.activation.stage)) {
+        funnel[stage] += 1;
+      }
 
       if (billing.subscription?.status === 'ACTIVE') {
         payingStores += 1;
@@ -125,6 +141,13 @@ export class PlatformDashboardService {
       trialsEnding,
       overdue,
       recentPayments: payments.slice(0, RECENT_PAYMENTS),
+      activation: {
+        created: funnel.created,
+        catalog: funnel.catalog,
+        firstOrder: funnel.first_order,
+        firstSale: funnel.first_sale,
+        paying: funnel.paying,
+      },
     };
   }
 
@@ -155,10 +178,10 @@ export class PlatformDashboardService {
     };
   }
 
-  private billingOf(storeId: string): Promise<TenantBilling> {
-    return this.prisma.forStore(storeId, async (tx) => {
+  private billingOf(store: StoreRow): Promise<TenantBilling> {
+    return this.prisma.forStore(store.id, async (tx) => {
       const subscription = await tx.subscription.findUnique({
-        where: { storeId },
+        where: { storeId: store.id },
         select: { status: true, currentPeriodEnd: true, plan: { select: { priceCop: true } } },
       });
 
@@ -170,7 +193,8 @@ export class PlatformDashboardService {
               currentPeriodEnd: subscription.currentPeriodEnd,
             }
           : null,
-        payments: await tx.payment.findMany({ where: { storeId } }),
+        payments: await tx.payment.findMany({ where: { storeId: store.id } }),
+        activation: await readActivation(tx, store.id, store.createdAt),
       };
     });
   }
