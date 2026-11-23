@@ -13,6 +13,7 @@ import { bogotaMonthKey, bogotaMonthRange } from '@shared/utils/bogota-time';
 import { PrismaService } from '@db/prisma.service';
 
 import { readActivation, stagesReachedBy } from './activation';
+import { buildMonthlySeries } from './monthly-series';
 import { daysUntil, toDateOnly } from './subscriptions.service';
 
 const DAY_MS = 86_400_000;
@@ -148,6 +149,7 @@ export class PlatformDashboardService {
         firstSale: funnel.first_sale,
         paying: funnel.paying,
       },
+      monthly: buildMonthlySeries(now, payments, stores),
     };
   }
 

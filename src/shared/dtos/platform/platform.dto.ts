@@ -500,6 +500,24 @@ export class ActivationFunnelDto {
   paying!: number;
 }
 
+/** Un mes de Bogotá de la serie del resumen: lo cobrado y las tiendas creadas. */
+export class MonthlyPointDto {
+  @ApiProperty({ example: '2026-11' })
+  month!: string;
+
+  @ApiProperty({ description: 'Pagos registrados ese mes, en pesos.' })
+  revenueCop!: number;
+
+  @ApiProperty({ description: 'Tiendas creadas ese mes.' })
+  newStores!: number;
+
+  @ApiProperty({
+    example: 12,
+    description: 'Tiendas que existían al cierre del mes (o hasta hoy en el mes actual).',
+  })
+  totalStores!: number;
+}
+
 export class PlatformDashboardDto {
   @ApiProperty({ type: StoreCountsDto })
   stores!: StoreCountsDto;
@@ -536,6 +554,12 @@ export class PlatformDashboardDto {
 
   @ApiProperty({ type: ActivationFunnelDto, description: 'Cuántas tiendas llegan a cada etapa.' })
   activation!: ActivationFunnelDto;
+
+  @ApiProperty({
+    type: [MonthlyPointDto],
+    description: 'Los últimos seis meses de Colombia, del más viejo al actual.',
+  })
+  monthly!: MonthlyPointDto[];
 }
 
 export class PaymentsQueryDto {
