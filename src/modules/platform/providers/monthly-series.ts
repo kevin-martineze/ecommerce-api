@@ -23,8 +23,9 @@ export function recentMonths(now: Date, count: number = SERIES_MONTHS): string[]
 }
 
 /**
- * Lo cobrado y las tiendas creadas en cada mes de la serie, en hora de Colombia.
- * Lo que cae fuera de la serie se ignora.
+ * Lo cobrado, las tiendas creadas y las tiendas acumuladas al cierre de cada mes
+ * de la serie, en hora de Colombia. Lo cobrado y las tiendas nuevas fuera de la
+ * serie se ignoran; las acumuladas cuentan también las tiendas anteriores a ella.
  */
 export function buildMonthlySeries(
   now: Date,
@@ -32,7 +33,10 @@ export function buildMonthlySeries(
   stores: { createdAt: Date }[],
 ): MonthlyPointDto[] {
   const series = new Map<string, MonthlyPointDto>(
-    recentMonths(now).map((month) => [month, { month, revenueCop: 0, newStores: 0 }]),
+    recentMonths(now).map((month) => [
+      month,
+      { month, revenueCop: 0, newStores: 0, totalStores: 0 },
+    ]),
   );
 
   for (const payment of payments) {
@@ -45,6 +49,12 @@ export function buildMonthlySeries(
     const point = series.get(bogotaMonthKey(store.createdAt));
 
     if (point) point.newStores += 1;
+  }
+
+  for (const [month, point] of series) {
+    const end = bogotaMonthRange(month).end;
+
+    point.totalStores = stores.filter((store) => store.createdAt < end).length;
   }
 
   return [...series.values()];

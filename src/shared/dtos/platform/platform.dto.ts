@@ -510,6 +510,12 @@ export class MonthlyPointDto {
 
   @ApiProperty({ description: 'Tiendas creadas ese mes.' })
   newStores!: number;
+
+  @ApiProperty({
+    example: 12,
+    description: 'Tiendas que existían al cierre del mes (o hasta hoy en el mes actual).',
+  })
+  totalStores!: number;
 }
 
 export class PlatformDashboardDto {
