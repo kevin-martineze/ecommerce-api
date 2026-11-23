@@ -390,6 +390,20 @@ describe('Plataforma (e2e)', () => {
       expect(empty.body).toEqual({ month: '2000-01', total: 0, payments: [] });
       expect((await platform('GET', '/payments?month=2026-9')).status).toBe(400);
     });
+
+    it('la serie mensual cierra en el mes de Bogotá y coincide con lo cobrado del mes', async () => {
+      const { body } = await platform<{
+        revenueThisMonth: number;
+        monthly: { month: string; revenueCop: number; newStores: number }[];
+      }>('GET', '/dashboard');
+      const mes = new Date(Date.now() - 5 * 3_600_000).toISOString().slice(0, 7);
+      const actual = body.monthly[5];
+
+      expect(body.monthly).toHaveLength(6);
+      expect(actual?.month).toBe(mes);
+      expect(actual?.revenueCop).toBe(body.revenueThisMonth);
+      expect(actual?.newStores).toBeGreaterThanOrEqual(1);
+    });
   });
 
   describe('vencimientos', () => {
