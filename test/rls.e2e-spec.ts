@@ -12,8 +12,11 @@ import { Client } from 'pg';
  * política—, y sin este test ese olvido funciona perfecto en las pruebas.
  */
 
-/** Tablas con `store_id` fuera de RLS a propósito. Ver migración `integridad_triggers_y_rls` § 3. */
-const EXEMPT_TABLES = new Set(['store_members', 'refresh_tokens']);
+/**
+ * Tablas con `store_id` fuera de RLS a propósito. Ver migración
+ * `integridad_triggers_y_rls` § 3 y `subdominios_anteriores`.
+ */
+const EXEMPT_TABLES = new Set(['store_members', 'refresh_tokens', 'store_slug_aliases']);
 
 function requireEnv(name: string): string {
   const value = process.env[name];

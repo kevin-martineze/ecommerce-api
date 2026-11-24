@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PublicStoreDomainDto } from '@shared/dtos/domains/domain.dto';
+import { PublicStoreDomainDto, PublicStoreSlugDto } from '@shared/dtos/domains/domain.dto';
 import { domainStatusView } from '@shared/domains/domain-status';
 import { normalizeHost } from '@shared/domains/host';
 import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
@@ -38,5 +38,23 @@ export class PublicStoreDomainService {
       slug: store.slug,
       status: domainStatusView(store.customDomainStatus, allowed),
     };
+  }
+
+  /**
+   * El subdominio actual de una tienda que dejó `slug`. Lo pide la tienda
+   * pública cuando un host no tiene tienda, para redirigir en vez de dar 404.
+   * Una tienda suspendida responde 404, igual que en `resolve`.
+   */
+  async resolveFormerSlug(slug: string): Promise<PublicStoreSlugDto> {
+    const alias = await this.prisma.storeSlugAlias.findUnique({
+      where: { slug },
+      select: { store: { select: { slug: true, status: true } } },
+    });
+
+    if (!alias || alias.store.status === 'SUSPENDED') {
+      throw new NotFoundException('Esta tienda no existe.');
+    }
+
+    return { slug: alias.store.slug };
   }
 }
