@@ -87,6 +87,11 @@ export function logoKey(storagePath: string): string {
   return `${storagePath}.webp`;
 }
 
+/** El ícono es un solo archivo PNG colgado de la ruta base que se guarda. */
+export function iconKey(storagePath: string): string {
+  return `${storagePath}.png`;
+}
+
 /** Las tres claves de una foto, para borrarlas juntas. */
 export function imageObjectKeys(storagePath: string): string[] {
   return IMAGE_SIZES.map((size) => imageObjectKey(storagePath, size.key));
@@ -120,5 +125,33 @@ export async function processLogo(original: Buffer): Promise<Buffer> {
     .rotate()
     .resize({ ...LOGO_BOX, fit: 'inside', withoutEnlargement: true })
     .webp({ quality: 90 })
+    .toBuffer();
+}
+
+/**
+ * Ícono de la tienda: un cuadrado de 512×512 en PNG.
+ *
+ * PNG y no WebP porque el ícono del iPhone (`apple-touch-icon`) solo admite
+ * PNG. Si la imagen no es cuadrada, se centra sin recortarla y lo que sobra
+ * queda transparente. Un SVG también entra y se rasteriza.
+ */
+export const ICON_SIZE = 512;
+
+export async function processIcon(original: Buffer): Promise<Buffer> {
+  try {
+    await sharp(original).metadata();
+  } catch {
+    throw new BadRequestException('El archivo no es una imagen.');
+  }
+
+  return sharp(original)
+    .rotate()
+    .resize({
+      width: ICON_SIZE,
+      height: ICON_SIZE,
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
     .toBuffer();
 }

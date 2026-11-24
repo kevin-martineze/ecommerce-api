@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DomainProvider } from '@shared/domains/domain-provider';
-import { imageObjectKeys, logoKey } from '@shared/media/images';
+import { iconKey, imageObjectKeys, logoKey } from '@shared/media/images';
 import { MediaStorage } from '@shared/storage/media-storage';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
@@ -53,7 +53,7 @@ export class StoreDeletionService {
 
       const settings = await tx.storeSettings.findUnique({
         where: { storeId },
-        select: { logoStoragePath: true },
+        select: { logoStoragePath: true, iconStoragePath: true },
       });
       const collections = await tx.collection.findMany({
         where: { storeId, heroStoragePath: { not: null } },
@@ -66,6 +66,10 @@ export class StoreDeletionService {
 
       if (settings?.logoStoragePath) {
         leftovers.keys.push(logoKey(settings.logoStoragePath));
+      }
+
+      if (settings?.iconStoragePath) {
+        leftovers.keys.push(iconKey(settings.iconStoragePath));
       }
 
       for (const { heroStoragePath } of collections) {

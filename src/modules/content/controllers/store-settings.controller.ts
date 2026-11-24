@@ -6,6 +6,7 @@ import { StoreRoute } from '@shared/decorators/store-route.decorator';
 import {
   StoreSettingsDto,
   UpdateStoreSettingsDto,
+  UploadIconDto,
   UploadLogoDto,
 } from '@shared/dtos/content/settings.dto';
 
@@ -47,5 +48,22 @@ export class StoreSettingsController {
   @ApiOperation({ summary: 'Quita el logo. La tienda vuelve a mostrar el nombre.' })
   removeLogo(@Param('storeId') storeId: string): Promise<StoreSettingsDto> {
     return this.settings.removeLogo(storeId);
+  }
+
+  @Put('icon')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UploadIconDto })
+  @ApiOperation({ summary: 'Sube el ícono de la tienda (favicon). Reemplaza el anterior.' })
+  async setIcon(
+    @Param('storeId') storeId: string,
+    @Req() request: FastifyRequest,
+  ): Promise<StoreSettingsDto> {
+    return this.settings.setIcon(storeId, await readUpload(request));
+  }
+
+  @Delete('icon')
+  @ApiOperation({ summary: 'Quita el ícono. La tienda vuelve a usar su logo.' })
+  removeIcon(@Param('storeId') storeId: string): Promise<StoreSettingsDto> {
+    return this.settings.removeIcon(storeId);
   }
 }
