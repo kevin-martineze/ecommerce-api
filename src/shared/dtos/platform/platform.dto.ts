@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { StoreStatus, SubscriptionStatus } from '@prisma/client';
 import {
   IsIn,
+  IsNotIn,
   IsInt,
   IsISO8601,
   IsOptional,
@@ -17,6 +18,8 @@ import {
 import { ACTIVATION_STAGES, ActivationStage } from '@shared/domains/activation';
 import { PaymentWidgetDto } from '@shared/dtos/payments/payments.dto';
 import { QueryBoolean, Trim } from '@shared/dtos/transforms';
+import { RESERVED_SLUGS } from '@shared/tenancy/reserved-slugs';
+import { STORE_SLUG_MESSAGE, STORE_SLUG_PATTERN } from '@shared/tenancy/store-slug';
 
 // ---------------------------------------------------------------------------
 // Planes
@@ -353,6 +356,16 @@ export class UpdateStoreStatusDto {
   })
   @IsIn(['ACTIVE', 'SUSPENDED'], { message: 'Solo se puede activar o suspender.' })
   status!: 'ACTIVE' | 'SUSPENDED';
+}
+
+/** El subdominio nuevo de una tienda. El anterior queda redirigiendo a este. */
+export class ChangeStoreSlugDto {
+  @ApiProperty({ example: 'boutique-mariposa', pattern: STORE_SLUG_PATTERN.source })
+  @Trim()
+  @IsString()
+  @Matches(STORE_SLUG_PATTERN, { message: STORE_SLUG_MESSAGE })
+  @IsNotIn(RESERVED_SLUGS, { message: 'Esa dirección está reservada. Elige otra.' })
+  slug!: string;
 }
 
 export class ChangePlanDto {

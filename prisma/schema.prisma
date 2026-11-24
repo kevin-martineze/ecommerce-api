@@ -148,8 +148,25 @@ model Store {
   supportMessages   SupportMessage[]
   notifications     StoreNotification[]
   pushSubscriptions PushSubscription[]
+  slugAliases       StoreSlugAlias[]
 
   @@map("stores")
+}
+
+/// Un subdominio que la tienda dejó. Sigue siendo suyo: la tienda pública lo
+/// redirige al actual, y nadie más lo puede tomar, para que un enlace viejo
+/// nunca lleve a la tienda de otra persona.
+///
+/// Sin RLS, como `stores`: es parte del paso que decide de qué tienda se habla.
+model StoreSlugAlias {
+  slug      String   @id
+  storeId   String   @map("store_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("store_slug_aliases")
 }
 
 /// Configuración editable de una tienda. Una fila por tienda.

@@ -17,6 +17,7 @@ import { PlatformRoute } from '@shared/decorators/platform-route.decorator';
 import { bogotaMonthKey } from '@shared/utils/bogota-time';
 import {
   ChangePlanDto,
+  ChangeStoreSlugDto,
   MonthPaymentsDto,
   PaymentsQueryDto,
   PlanDto,
@@ -81,6 +82,17 @@ export class PlatformController {
     @Body() dto: UpdateStoreStatusDto,
   ): Promise<PlatformStoreDetailDto> {
     return this.platform.setStatus(storeId, dto);
+  }
+
+  @Patch('stores/:storeId/slug')
+  @ApiOperation({
+    summary: 'Cambia el subdominio. El anterior sigue siendo de la tienda y redirige al nuevo.',
+  })
+  changeSlug(
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @Body() dto: ChangeStoreSlugDto,
+  ): Promise<PlatformStoreDetailDto> {
+    return this.platform.changeSlug(storeId, dto);
   }
 
   @Put('stores/:storeId/plan')

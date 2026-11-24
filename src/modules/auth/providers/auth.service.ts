@@ -699,10 +699,14 @@ export class AuthService {
     }
   }
 
+  /** Un subdominio que otra tienda dejó tampoco está libre: sigue llevando a ella. */
   private async assertSlugAvailable(slug: string): Promise<void> {
-    const existing = await this.prisma.store.findUnique({ where: { slug }, select: { id: true } });
+    const [existing, former] = await Promise.all([
+      this.prisma.store.findUnique({ where: { slug }, select: { id: true } }),
+      this.prisma.storeSlugAlias.findUnique({ where: { slug }, select: { slug: true } }),
+    ]);
 
-    if (existing) {
+    if (existing || former) {
       throw new ConflictException({
         message: 'Esa dirección ya está tomada. Prueba con otra.',
         error: 'slug_taken',

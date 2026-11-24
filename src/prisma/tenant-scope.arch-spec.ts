@@ -37,8 +37,11 @@ const SOURCE_ROOT = join(__dirname, '..');
  * - `PushSubscription`: su `storeId` es la bandeja que pidió el navegador (o
  *   null, la consola). Es de la cuenta y se busca por `endpoint`, que es del
  *   navegador y no de una tienda.
+ * - `StoreSlugAlias`: un subdominio que la tienda dejó. Se busca por el
+ *   subdominio, igual que `stores`, porque es el paso que decide de qué tienda
+ *   se habla.
  */
-const EXEMPT_MODELS = new Set(['RefreshToken', 'PushSubscription']);
+const EXEMPT_MODELS = new Set(['RefreshToken', 'PushSubscription', 'StoreSlugAlias']);
 
 const QUERY_METHODS = new Set([
   'findUnique',

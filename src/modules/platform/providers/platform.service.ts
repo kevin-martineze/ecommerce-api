@@ -1,7 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Payment, Prisma, Store } from '@prisma/client';
 import {
   ChangePlanDto,
+  ChangeStoreSlugDto,
   PaymentDto,
   PlanDto,
   PlatformStoreDetailDto,
@@ -164,6 +170,40 @@ export class PlatformService {
     await this.requireStore(storeId);
 
     await this.prisma.store.update({ where: { id: storeId }, data: { status: dto.status } });
+
+    return this.getStore(storeId);
+  }
+
+  /**
+   * Cambia el subdominio. El anterior queda en `store_slug_aliases`: la tienda
+   * pública lo redirige al nuevo y nadie más lo puede tomar. Volver a un
+   * subdominio que la tienda ya tuvo lo saca de esa lista.
+   *
+   * El orden importa por los triggers de la migración: primero la tienda toma
+   * el nuevo, luego el anterior pasa a la lista, cuando ya nadie lo usa.
+   */
+  async changeSlug(storeId: string, dto: ChangeStoreSlugDto): Promise<PlatformStoreDetailDto> {
+    const store = await this.requireStore(storeId);
+
+    if (store.slug === dto.slug) return this.getStore(storeId);
+
+    await this.prisma.$transaction(async (tx) => {
+      const inUse = await tx.store.findUnique({ where: { slug: dto.slug }, select: { id: true } });
+      const alias = await tx.storeSlugAlias.findUnique({ where: { slug: dto.slug } });
+
+      if (inUse || (alias && alias.storeId !== storeId)) {
+        throw new ConflictException({
+          message: 'Esa dirección ya es de otra tienda. Prueba con otra.',
+          error: 'slug_taken',
+        });
+      }
+
+      await tx.store.update({ where: { id: storeId }, data: { slug: dto.slug } });
+
+      if (alias) await tx.storeSlugAlias.delete({ where: { slug: dto.slug } });
+
+      await tx.storeSlugAlias.create({ data: { slug: store.slug, storeId } });
+    });
 
     return this.getStore(storeId);
   }

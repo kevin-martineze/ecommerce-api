@@ -55,3 +55,9 @@ export class PublicStoreDomainDto {
   @ApiProperty({ enum: DOMAIN_STATUS_VALUES })
   status!: DomainStatusView;
 }
+
+/** El subdominio actual de una tienda que antes usaba otro. */
+export class PublicStoreSlugDto {
+  @ApiProperty({ example: 'boutique-mariposa' })
+  slug!: string;
+}

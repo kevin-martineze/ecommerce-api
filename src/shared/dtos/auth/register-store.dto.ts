@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Trim } from '@shared/dtos/transforms';
 import { RESERVED_SLUGS } from '@shared/tenancy/reserved-slugs';
+import { STORE_SLUG_MESSAGE, STORE_SLUG_PATTERN } from '@shared/tenancy/store-slug';
 
 /**
  * Alta de una tienda nueva junto con la cuenta de su dueña.
@@ -56,10 +57,7 @@ export class RegisterStoreDto {
    */
   @ApiProperty({ example: 'boutique-mariposa', pattern: '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$' })
   @IsString()
-  @Matches(/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/, {
-    message:
-      'El identificador solo admite minúsculas, números y guiones, y debe empezar y terminar con letra o número.',
-  })
+  @Matches(STORE_SLUG_PATTERN, { message: STORE_SLUG_MESSAGE })
   @IsNotIn(RESERVED_SLUGS, { message: 'Esa dirección está reservada. Elige otra.' })
   storeSlug!: string;
 
