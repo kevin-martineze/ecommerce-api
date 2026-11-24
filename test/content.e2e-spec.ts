@@ -322,6 +322,68 @@ describe('Contenido de la tienda y fotos (e2e)', () => {
     });
   });
 
+  describe('ícono', () => {
+    const iconPath = () => `/stores/${shop.storeId}/settings/icon`;
+    const mediaFile = (url: string) => join(api.mediaDir, url.slice(url.indexOf('stores/')));
+
+    interface Brand {
+      logoUrl: string | null;
+      iconUrl: string | null;
+    }
+
+    it('sin ícono, la tienda lo deja en null y usa su logo', async () => {
+      const publico = await pub<{ settings: Brand }>('');
+
+      expect(publico.body.settings.iconUrl).toBeNull();
+    });
+
+    it('se guarda como PNG cuadrado de 512×512, aunque la imagen no sea cuadrada', async () => {
+      const { body, status } = await api.upload<Brand>(
+        'PUT',
+        iconPath(),
+        shop,
+        await photo(1200, 600),
+      );
+
+      expect(status).toBe(200);
+      expect(body.iconUrl).toMatch(/\.png$/);
+
+      const meta = await sharp(mediaFile(body.iconUrl ?? '')).metadata();
+
+      expect(meta.format).toBe('png');
+      expect([meta.width, meta.height]).toEqual([512, 512]);
+
+      const publico = await pub<{ settings: Brand }>('');
+
+      expect(publico.body.settings.iconUrl).toBe(body.iconUrl);
+    });
+
+    it('va aparte del logo: subir uno no toca el otro', async () => {
+      const logo = await api.upload<Brand>(
+        'PUT',
+        `/stores/${shop.storeId}/settings/logo`,
+        shop,
+        await photo(),
+      );
+      const { body: antes } = await panel<Brand>('GET', '/settings');
+      const icono = await api.upload<Brand>('PUT', iconPath(), shop, await photo(512, 512));
+
+      expect(icono.body.logoUrl).toBe(logo.body.logoUrl);
+      expect(existsSync(mediaFile(antes.iconUrl ?? ''))).toBe(false);
+      expect(existsSync(mediaFile(icono.body.iconUrl ?? ''))).toBe(true);
+    });
+
+    it('quitar el ícono borra el archivo y deja el logo', async () => {
+      const { body: antes } = await panel<Brand>('GET', '/settings');
+      const quitado = await panel<Brand>('DELETE', '/settings/icon');
+
+      expect(quitado.status).toBe(200);
+      expect(quitado.body.iconUrl).toBeNull();
+      expect(quitado.body.logoUrl).toBe(antes.logoUrl);
+      expect(existsSync(mediaFile(antes.iconUrl ?? ''))).toBe(false);
+    });
+  });
+
   describe('colecciones', () => {
     let collection: CollectionBody;
     let collectionHero = '';

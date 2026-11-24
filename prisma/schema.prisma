@@ -247,6 +247,11 @@ model StoreSettings {
   logoUrl         String? @map("logo_url")
   logoStoragePath String? @map("logo_storage_path")
 
+  /// Ícono de la tienda: el favicon, el ícono del celular y el de compartir.
+  /// Null = se usa el logo. Mismo esquema que el logo (`{ruta}.png`).
+  iconUrl         String? @map("icon_url")
+  iconStoragePath String? @map("icon_storage_path")
+
   /// Diseño de la vitrina: la elige la dueña al abrir la tienda. Texto y no
   /// enum para que estrenar una plantilla no sea una migración de esquema; los
   /// códigos válidos están en `src/shared/content/templates.ts`.

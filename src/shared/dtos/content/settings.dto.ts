@@ -97,6 +97,12 @@ export class StoreSettingsDto {
   @ApiProperty({ nullable: true, description: 'Logo de la tienda. Null: se muestra el nombre.' })
   logoUrl!: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Ícono cuadrado (favicon), PNG de 512×512. Null: se usa el logo.',
+  })
+  iconUrl!: string | null;
+
   @ApiProperty({ enum: STOREFRONT_TEMPLATES, description: 'Diseño de la vitrina.' })
   template!: string;
 
@@ -197,6 +203,15 @@ export class UpdateStoreSettingsDto {
   @ValidateNested()
   @Type(() => UpdateStoreThemeDto)
   theme?: UpdateStoreThemeDto | null;
+}
+
+export class UploadIconDto {
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    description: 'El ícono: PNG, JPG, WebP o SVG, mejor cuadrado. La API lo deja en 512×512.',
+  })
+  file!: unknown;
 }
 
 export class UploadLogoDto {

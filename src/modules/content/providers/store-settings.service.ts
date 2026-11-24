@@ -9,7 +9,7 @@ import {
   UpdateStoreSettingsDto,
   UpdateStoreThemeDto,
 } from '@shared/dtos/content/settings.dto';
-import { logoKey, processLogo, newStoragePath } from '@shared/media/images';
+import { iconKey, logoKey, newStoragePath, processIcon, processLogo } from '@shared/media/images';
 import { Upload } from '@shared/media/upload';
 import { MediaStorage } from '@shared/storage/media-storage';
 import { planAllowsCustomDomain } from '@shared/tenancy/custom-domain-plan';
@@ -19,6 +19,25 @@ import { blankToNull } from '@shared/utils/text';
 import { PrismaService, TenantClient } from '@db/prisma.service';
 
 const MISSING = 'La tienda no tiene ajustes.';
+
+/** Las imágenes de la marca: el logo ancho de la cabecera y el ícono cuadrado. */
+type BrandImage = 'logo' | 'icon';
+
+const BRAND_IMAGES = {
+  logo: { process: processLogo, key: logoKey, contentType: 'image/webp' },
+  icon: { process: processIcon, key: iconKey, contentType: 'image/png' },
+} as const;
+
+/** Las dos columnas de una imagen de la marca: su URL pública y su ruta base. */
+function brandColumns(
+  kind: BrandImage,
+  url: string | null,
+  storagePath: string | null,
+): Prisma.StoreSettingsUpdateInput {
+  return kind === 'logo'
+    ? { logoUrl: url, logoStoragePath: storagePath }
+    : { iconUrl: url, iconStoragePath: storagePath };
+}
 
 /** Lo que se lee de la tienda para armar sus ajustes y su dirección pública. */
 const STORE_FIELDS = {
@@ -123,59 +142,79 @@ export class StoreSettingsService {
     });
   }
 
+  /** Sube el logo. Reemplaza el anterior. */
+  setLogo(storeId: string, upload: Upload): Promise<StoreSettingsDto> {
+    return this.setBrandImage(storeId, 'logo', upload);
+  }
+
+  /** Quita el logo: la tienda vuelve a mostrar el nombre. */
+  removeLogo(storeId: string): Promise<StoreSettingsDto> {
+    return this.removeBrandImage(storeId, 'logo');
+  }
+
+  /** Sube el ícono: el favicon y el ícono del celular. Reemplaza el anterior. */
+  setIcon(storeId: string, upload: Upload): Promise<StoreSettingsDto> {
+    return this.setBrandImage(storeId, 'icon', upload);
+  }
+
+  /** Quita el ícono: la tienda vuelve a usar su logo. */
+  removeIcon(storeId: string): Promise<StoreSettingsDto> {
+    return this.removeBrandImage(storeId, 'icon');
+  }
+
   /**
-   * Sube el logo. Sigue el orden de `CollectionsService.setHero`: la imagen se
-   * convierte antes de abrir la transacción, el archivo nuevo se escribe
-   * dentro, y el anterior se borra solo cuando el nuevo ya está guardado.
+   * Sigue el orden de `CollectionsService.setHero`: la imagen se convierte
+   * antes de abrir la transacción, el archivo nuevo se escribe dentro, y el
+   * anterior se borra solo cuando el nuevo ya está guardado.
    */
-  async setLogo(storeId: string, upload: Upload): Promise<StoreSettingsDto> {
-    const logo = await processLogo(upload.buffer);
-    const storagePath = newStoragePath(storeId, 'branding', 'logo');
+  private async setBrandImage(
+    storeId: string,
+    kind: BrandImage,
+    upload: Upload,
+  ): Promise<StoreSettingsDto> {
+    const image = BRAND_IMAGES[kind];
+    const body = await image.process(upload.buffer);
+    const storagePath = newStoragePath(storeId, 'branding', kind);
+    const key = image.key(storagePath);
     let previous: string | null = null;
 
     try {
       await this.prisma.forStore(storeId, async (tx) => {
         const current = await tx.storeSettings.findUnique({
           where: { storeId },
-          select: { logoStoragePath: true },
+          select: { logoStoragePath: true, iconStoragePath: true },
         });
 
         if (!current) {
           throw new NotFoundException(MISSING);
         }
 
-        previous = current.logoStoragePath;
+        previous = kind === 'logo' ? current.logoStoragePath : current.iconStoragePath;
 
-        await this.storage.put([
-          { key: logoKey(storagePath), body: logo, contentType: 'image/webp' },
-        ]);
+        await this.storage.put([{ key, body, contentType: image.contentType }]);
 
         await tx.storeSettings.update({
           where: { storeId },
-          data: {
-            logoUrl: this.storage.publicUrl(logoKey(storagePath)),
-            logoStoragePath: storagePath,
-          },
+          data: brandColumns(kind, this.storage.publicUrl(key), storagePath),
         });
       });
     } catch (error) {
-      await this.discard([logoKey(storagePath)]);
+      await this.discard([key]);
       throw error;
     }
 
     if (previous) {
-      await this.discard([logoKey(previous)]);
+      await this.discard([image.key(previous)]);
     }
 
     return this.get(storeId);
   }
 
-  /** Quita el logo: la tienda vuelve a mostrar el nombre. */
-  async removeLogo(storeId: string): Promise<StoreSettingsDto> {
+  private async removeBrandImage(storeId: string, kind: BrandImage): Promise<StoreSettingsDto> {
     const previous = await this.prisma.forStore(storeId, async (tx) => {
       const current = await tx.storeSettings.findUnique({
         where: { storeId },
-        select: { logoStoragePath: true },
+        select: { logoStoragePath: true, iconStoragePath: true },
       });
 
       if (!current) {
@@ -184,14 +223,14 @@ export class StoreSettingsService {
 
       await tx.storeSettings.update({
         where: { storeId },
-        data: { logoUrl: null, logoStoragePath: null },
+        data: brandColumns(kind, null, null),
       });
 
-      return current.logoStoragePath;
+      return kind === 'logo' ? current.logoStoragePath : current.iconStoragePath;
     });
 
     if (previous) {
-      await this.discard([logoKey(previous)]);
+      await this.discard([BRAND_IMAGES[kind].key(previous)]);
     }
 
     return this.get(storeId);
@@ -202,7 +241,7 @@ export class StoreSettingsService {
       await this.storage.remove(keys);
     } catch (error) {
       this.logger.warn(
-        `No se pudo borrar el logo del almacenamiento: ${
+        `No se pudo borrar la imagen de la marca del almacenamiento: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -254,6 +293,7 @@ function toDto(
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,
     logoUrl: settings.logoUrl,
+    iconUrl: settings.iconUrl,
     template: settings.template,
     theme: readTheme(settings.theme),
     assistant,
