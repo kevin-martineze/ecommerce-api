@@ -58,6 +58,12 @@ export class PaymentAccountDto {
   @ApiProperty({ description: 'La URL que la tienda pega en su panel de la pasarela.' })
   eventsUrl!: string;
 
+  @ApiProperty({
+    description:
+      'La tienda cobra con la misma cuenta de Wompi que Globerce: sus avisos llegan por la URL de la plataforma y no debe pegar la suya.',
+  })
+  sharesPlatformAccount!: boolean;
+
   @ApiPropertyOptional({ nullable: true })
   updatedAt!: Date | null;
 

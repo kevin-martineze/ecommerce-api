@@ -51,6 +51,7 @@ interface Account {
   lastEventAt: string | null;
   publicKey: string | null;
   eventsUrl: string;
+  sharesPlatformAccount: boolean;
   privateKey?: string;
 }
 
@@ -207,6 +208,8 @@ describe('Pagos de la tienda (e2e)', () => {
       expect(JSON.stringify(body)).not.toContain(LLAVES.privateKey);
       expect(JSON.stringify(body)).not.toContain(LLAVES.eventsSecret);
       expect(body.eventsUrl).toContain(shop.storeId);
+      // Llaves propias, no las de la plataforma: no comparte cuenta con Globerce.
+      expect(body.sharesPlatformAccount).toBe(false);
       // Verificada contra Wompi: el nombre comercial y el modo, sin datos de contacto.
       expect(body.merchantName).toBe('Tienda de prueba');
       expect(body.mode).toBe('test');

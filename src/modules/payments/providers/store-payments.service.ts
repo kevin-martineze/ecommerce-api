@@ -9,7 +9,7 @@ import { Env } from '@shared/config/env';
 import { ConnectPaymentsDto, PaymentAccountDto } from '@shared/dtos/payments/payments.dto';
 import { GatewayCredentials } from '@shared/payments/gateway';
 import { open, seal } from '@shared/payments/secret-box';
-import { checkWompiKeys, wompiModeOf } from '@shared/payments/wompi-keys';
+import { checkWompiKeys, sharesPlatformAccount, wompiModeOf } from '@shared/payments/wompi-keys';
 import { PrismaService } from '@db/prisma.service';
 
 /**
@@ -59,6 +59,11 @@ export class StorePaymentsService {
       provider: account?.provider ?? 'wompi',
       publicKey: account?.publicKey ?? null,
       eventsUrl: this.eventsUrl(storeId),
+      sharesPlatformAccount: sharesPlatformAccount(
+        account?.publicKey ?? null,
+        this.config.get('WOMPI_PUBLIC_KEY', { infer: true }),
+        this.config.get('PAYMENTS_DRIVER', { infer: true }),
+      ),
       updatedAt: account?.updatedAt ?? null,
       merchantName: account?.merchantName ?? null,
       mode: account ? wompiModeOf(account.publicKey) : null,
