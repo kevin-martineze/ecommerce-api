@@ -1,4 +1,4 @@
-import { checkWompiKeys, fetchMerchant, wompiModeOf } from './wompi-keys';
+import { checkWompiKeys, fetchMerchant, sharesPlatformAccount, wompiModeOf } from './wompi-keys';
 import { WompiGateway } from './wompi-gateway';
 
 /**
@@ -58,6 +58,29 @@ describe('wompiModeOf', () => {
     expect(wompiModeOf('pub_test_abc')).toBe('test');
     expect(wompiModeOf('prv_prod_abc')).toBe('prod');
     expect(wompiModeOf('pub_otra_cosa')).toBeNull();
+  });
+});
+
+describe('sharesPlatformAccount', () => {
+  it('con la misma llave pública de la plataforma y driver wompi, es true', () => {
+    expect(sharesPlatformAccount('pub_prod_auralis', 'pub_prod_auralis', 'wompi')).toBe(true);
+  });
+
+  it('con otra llave pública, es false', () => {
+    expect(sharesPlatformAccount('pub_prod_tienda', 'pub_prod_auralis', 'wompi')).toBe(false);
+  });
+
+  it('con driver simulated o none, es false aunque las llaves coincidan', () => {
+    expect(sharesPlatformAccount('pub_test_llave', 'pub_test_llave', 'simulated')).toBe(false);
+    expect(sharesPlatformAccount('pub_test_llave', 'pub_test_llave', 'none')).toBe(false);
+  });
+
+  it('sin llave de plataforma, es false', () => {
+    expect(sharesPlatformAccount('pub_prod_tienda', undefined, 'wompi')).toBe(false);
+  });
+
+  it('sin cuenta de la tienda, es false', () => {
+    expect(sharesPlatformAccount(null, 'pub_prod_auralis', 'wompi')).toBe(false);
   });
 });
 

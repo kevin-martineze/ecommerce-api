@@ -44,6 +44,26 @@ export function wompiBaseUrlOf(key: string): string | null {
 }
 
 /**
+ * ¿La tienda cobra con la misma cuenta de Wompi que la plataforma? Entonces sus
+ * avisos ya llegan por la URL de la plataforma y la tienda no debe pegar la suya:
+ * Wompi solo admite una URL de eventos por cuenta.
+ *
+ * Compara solo la llave pública, que es pública: nunca se descifra ni se compara
+ * un secreto para esto. Sin cuenta, sin llave de plataforma o sin driver `wompi`,
+ * es `false`.
+ */
+export function sharesPlatformAccount(
+  storePublicKey: string | null,
+  platformPublicKey: string | undefined,
+  driver: string,
+): boolean {
+  if (driver !== 'wompi') return false;
+  if (!storePublicKey || !platformPublicKey) return false;
+
+  return storePublicKey === platformPublicKey;
+}
+
+/**
  * Solo los campos que usamos. La respuesta trae más datos del comercio
  * (correo, teléfono, documento, contacto): no se leen, no se guardan.
  */
